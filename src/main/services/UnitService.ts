@@ -58,8 +58,13 @@ class UnitService {
   }
 
   public delete(id: number): boolean {
-    const result = dbService.run('DELETE FROM units WHERE id = ?', [id]);
-    return result.changes > 0;
+    return dbService.transaction(() => {
+      // Manual cascade delete for existing databases
+      dbService.run('DELETE FROM payments WHERE unit_id = ?', [id]);
+      dbService.run('DELETE FROM invoices WHERE unit_id = ?', [id]);
+      const result = dbService.run('DELETE FROM units WHERE id = ?', [id]);
+      return result.changes > 0;
+    });
   }
 
   public bulkCreate(units: Unit[]): void {

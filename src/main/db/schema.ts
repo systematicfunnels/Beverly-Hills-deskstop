@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS units (
   contact_number TEXT,
   email TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (society_id) REFERENCES societies(id)
+  FOREIGN KEY (society_id) REFERENCES societies(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS invoices (
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   status TEXT DEFAULT 'Unpaid', -- Unpaid, Paid, Partially Paid, Cancelled
   pdf_path TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (unit_id) REFERENCES units(id)
+  FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -51,13 +51,13 @@ CREATE TABLE IF NOT EXISTS payments (
   invoice_id INTEGER,
   payment_date DATE NOT NULL,
   amount_paid REAL NOT NULL,
-  payment_mode TEXT NOT NULL, -- Cheque, Transfer, Cash
+  payment_mode TEXT NOT NULL,
   reference_number TEXT,
   receipt_number TEXT UNIQUE,
   remarks TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (unit_id) REFERENCES units(id),
-  FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+  FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE CASCADE,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS settings (

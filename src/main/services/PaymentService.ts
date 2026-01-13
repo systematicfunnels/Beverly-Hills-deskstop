@@ -44,7 +44,7 @@ class PaymentService {
       ]);
 
       if (payment.invoice_id) {
-        dbService.run('UPDATE invoices SET status = "Paid" WHERE id = ?', [payment.invoice_id]);
+        dbService.run("UPDATE invoices SET status = 'Paid' WHERE id = ?", [payment.invoice_id]);
       }
 
       return result.lastInsertRowid as number;
@@ -55,7 +55,7 @@ class PaymentService {
     return dbService.transaction(() => {
       const payment = dbService.get<Payment>('SELECT * FROM payments WHERE id = ?', [id]);
       if (payment && payment.invoice_id) {
-        dbService.run('UPDATE invoices SET status = "Unpaid" WHERE id = ?', [payment.invoice_id]);
+        dbService.run("UPDATE invoices SET status = 'Unpaid' WHERE id = ?", [payment.invoice_id]);
       }
       const result = dbService.run('DELETE FROM payments WHERE id = ?', [id]);
       return result.changes > 0;

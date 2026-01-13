@@ -86,7 +86,7 @@ class InvoiceService {
     const tableY = height - 240;
     page.drawRectangle({ x: 50, y: tableY, width: 500, height: 25, color: rgb(0.17, 0.48, 0.37) });
     page.drawText('DESCRIPTION', { x: 60, y: tableY + 7, size: 10, font: boldFont, color: rgb(1, 1, 1) });
-    page.drawText('AMOUNT (₹)', { x: 450, y: tableY + 7, size: 10, font: boldFont, color: rgb(1, 1, 1) });
+    page.drawText('AMOUNT (Rs.)', { x: 450, y: tableY + 7, size: 10, font: boldFont, color: rgb(1, 1, 1) });
 
     // Table Content
     let currentY = tableY - 25;
@@ -107,7 +107,7 @@ class InvoiceService {
     // Total
     page.drawLine({ start: { x: 50, y: currentY + 10 }, end: { x: 550, y: currentY + 10 } });
     page.drawText('Total Amount Due', { x: 60, y: currentY - 5, size: 12, font: boldFont });
-    page.drawText(`₹ ${invoice.total_amount.toFixed(2)}`, { x: 450, y: currentY - 5, size: 12, font: boldFont });
+    page.drawText(`Rs. ${invoice.total_amount.toFixed(2)}`, { x: 450, y: currentY - 5, size: 12, font: boldFont });
 
     // Bank Details
     currentY -= 60;
@@ -156,10 +156,10 @@ class InvoiceService {
           INSERT INTO invoices (
             unit_id, billing_month, billing_year, invoice_date, due_date, 
             amount_due, tax_amount, solar_charges, previous_arrears, total_amount, status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Unpaid')
         `, [
           unit.id, month, year, invoiceDate, dueDate,
-          amountDue, taxAmount, solarCharges, previousArrears, totalAmount, 'Unpaid'
+          amountDue, taxAmount, solarCharges, previousArrears, totalAmount
         ]);
       }
     });
