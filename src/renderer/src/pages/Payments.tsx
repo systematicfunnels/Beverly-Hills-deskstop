@@ -47,6 +47,7 @@ const Payments: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
@@ -63,6 +64,7 @@ const Payments: React.FC = () => {
       setUnits(unitsData);
       setInvoices(invoicesData.filter(i => i.status === 'Unpaid'));
       setSocieties(societiesData);
+      setSelectedRowKeys([]);
     } catch (error) {
       message.error('Failed to fetch data');
     } finally {
@@ -107,6 +109,28 @@ const Payments: React.FC = () => {
         await window.api.payments.delete(id);
         message.success('Payment deleted');
         fetchData();
+      },
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    Modal.confirm({
+      title: `Are you sure you want to delete ${selectedRowKeys.length} payments?`,
+      content: 'This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'No',
+      onOk: async () => {
+        setLoading(true);
+        try {
+          await window.api.payments.bulkDelete(selectedRowKeys as number[]);
+          message.success(`Successfully deleted ${selectedRowKeys.length} payments`);
+          fetchData();
+        } catch (error) {
+          message.error('Failed to delete payments');
+        } finally {
+          setLoading(false);
+        }
       },
     });
   };
@@ -219,10 +243,23 @@ const Payments: React.FC = () => {
               <Option value="Cheque">Cheque</Option>
               <Option value="Cash">Cash</Option>
             </Select>
+            {selectedRowKeys.length > 0 && (
+              <Button 
+                danger 
+                icon={<DeleteOutlined />} 
+                onClick={handleBulkDelete}
+              >
+                Delete Selected ({selectedRowKeys.length})
+              </Button>
+            )}
           </Space>
         </div>
 
         <Table 
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
           columns={columns} 
           dataSource={filteredPayments} 
           rowKey="id"

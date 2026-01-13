@@ -17,17 +17,21 @@ declare global {
         create: (unit: any) => Promise<number>;
         update: (id: number, unit: any) => Promise<boolean>;
         delete: (id: number) => Promise<boolean>;
+        bulkDelete: (ids: number[]) => Promise<void>;
         bulkCreate: (units: any[]) => Promise<void>;
       },
       invoices: {
         getAll: () => Promise<any[]>;
         createBatch: (societyId: number, month: number, year: number, date: string, dueDate: string) => Promise<void>;
+        delete: (id: number) => Promise<boolean>;
+        bulkDelete: (ids: number[]) => Promise<void>;
         generatePdf: (id: number) => Promise<string>;
       },
       payments: {
         getAll: () => Promise<any[]>;
         create: (payment: any) => Promise<number>;
         delete: (id: number) => Promise<boolean>;
+        bulkDelete: (ids: number[]) => Promise<void>;
       },
       shell: {
         showItemInFolder: (path: string) => Promise<void>;

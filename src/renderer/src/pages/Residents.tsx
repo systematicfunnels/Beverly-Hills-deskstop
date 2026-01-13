@@ -30,6 +30,7 @@ const Residents: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
   const [selectedWing, setSelectedWing] = useState<string | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [societies, setSocieties] = useState<Society[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -49,6 +50,7 @@ const Residents: React.FC = () => {
       setUnits(unitsData);
       setFilteredUnits(unitsData);
       setSocieties(societiesData);
+      setSelectedRowKeys([]);
     } catch (error) {
       message.error('Failed to fetch data');
     } finally {
@@ -92,6 +94,28 @@ const Residents: React.FC = () => {
         await window.api.units.delete(id);
         message.success('Unit deleted');
         fetchData();
+      },
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    Modal.confirm({
+      title: `Are you sure you want to delete ${selectedRowKeys.length} units?`,
+      content: 'This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'No',
+      onOk: async () => {
+        setLoading(true);
+        try {
+          await window.api.units.bulkDelete(selectedRowKeys as number[]);
+          message.success(`Successfully deleted ${selectedRowKeys.length} units`);
+          fetchData();
+        } catch (error) {
+          message.error('Failed to delete units');
+        } finally {
+          setLoading(false);
+        }
       },
     });
   };
@@ -250,10 +274,23 @@ const Residents: React.FC = () => {
             >
               {wings.map(wing => <Option key={wing} value={wing}>{wing}</Option>)}
             </Select>
+            {selectedRowKeys.length > 0 && (
+              <Button 
+                danger 
+                icon={<DeleteOutlined />} 
+                onClick={handleBulkDelete}
+              >
+                Delete Selected ({selectedRowKeys.length})
+              </Button>
+            )}
           </Space>
         </div>
 
         <Table 
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
           columns={columns} 
           dataSource={filteredUnits} 
           rowKey="id" 

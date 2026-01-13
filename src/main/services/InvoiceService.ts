@@ -174,6 +174,24 @@ class InvoiceService {
       ORDER BY i.billing_year DESC, i.billing_month DESC, u.unit_number ASC
     `);
   }
+
+  public delete(id: number): boolean {
+    try {
+      const result = dbService.run('DELETE FROM invoices WHERE id = ?', [id]);
+      return result.changes > 0;
+    } catch (error) {
+      console.error(`Error deleting invoice ${id}:`, error);
+      throw error;
+    }
+  }
+
+  public bulkDelete(ids: number[]): void {
+    dbService.transaction(() => {
+      for (const id of ids) {
+        this.delete(id);
+      }
+    });
+  }
 }
 
 export const invoiceService = new InvoiceService();

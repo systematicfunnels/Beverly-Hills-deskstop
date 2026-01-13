@@ -59,11 +59,60 @@ class UnitService {
 
   public delete(id: number): boolean {
     return dbService.transaction(() => {
-      // Manual cascade delete for existing databases
-      dbService.run('DELETE FROM payments WHERE unit_id = ?', [id]);
-      dbService.run('DELETE FROM invoices WHERE unit_id = ?', [id]);
-      const result = dbService.run('DELETE FROM units WHERE id = ?', [id]);
-      return result.changes > 0;
+      try {
+        console.log(`[DEBUG] Starting thorough deletion of unit ${id}`);
+        
+        // 0. Check if unit exists
+        const unit = dbService.get('SELECT id FROM units WHERE id = ?', [id]);
+        if (!unit) {
+          console.warn(`[DEBUG] Unit ${id} not found, skipping deletion`);
+          return false;
+        }
+
+        // 1. Clear invoice references in ANY payment (even from other units) 
+        // that points to this unit's invoices
+        console.log(`[DEBUG] Step 1: Clearing all payment references to invoices of unit ${id}`);
+        dbService.run(`
+          UPDATE payments 
+          SET invoice_id = NULL 
+          WHERE invoice_id IN (SELECT id FROM invoices WHERE unit_id = ?)
+        `, [id]);
+        
+        // 2. Delete all payments belonging to this unit
+        console.log(`[DEBUG] Step 2: Deleting all payments belonging to unit ${id}`);
+        dbService.run('DELETE FROM payments WHERE unit_id = ?', [id]);
+        
+        // 3. Delete all invoices belonging to this unit
+        console.log(`[DEBUG] Step 3: Deleting all invoices belonging to unit ${id}`);
+        dbService.run('DELETE FROM invoices WHERE unit_id = ?', [id]);
+        
+        // 4. Finally delete the unit
+        console.log(`[DEBUG] Step 4: Deleting unit record for ${id}`);
+        const result = dbService.run('DELETE FROM units WHERE id = ?', [id]);
+        
+        console.log(`[DEBUG] Unit ${id} and all related data deleted successfully`);
+        return result.changes > 0;
+      } catch (error) {
+        console.error(`[FATAL] Error in thorough UnitService.delete(${id}):`, error);
+        // If it still fails, let's see which table is causing it via foreign_key_check
+        try {
+          const violations = dbService.query('PRAGMA foreign_key_check');
+          if (violations.length > 0) {
+            console.error('[DEBUG] Foreign key violations detected:', JSON.stringify(violations, null, 2));
+          }
+        } catch (e) {
+          // ignore
+        }
+        throw error;
+      }
+    });
+  }
+
+  public bulkDelete(ids: number[]): void {
+    dbService.transaction(() => {
+      for (const id of ids) {
+        this.delete(id);
+      }
     });
   }
 

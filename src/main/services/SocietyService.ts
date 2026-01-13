@@ -57,25 +57,41 @@ class SocietyService {
 
   public delete(id: number): boolean {
     return dbService.transaction(() => {
-      // Manual cascade delete for existing databases without ON DELETE CASCADE
-      // 1. Delete all payments related to units of this society
-      dbService.run(`
-        DELETE FROM payments 
-        WHERE unit_id IN (SELECT id FROM units WHERE society_id = ?)
-      `, [id]);
+      try {
+        // Manual cascade delete for existing databases without ON DELETE CASCADE
+        
+        // 0. Clear invoice references in payments for this society's units
+        dbService.run(`
+          UPDATE payments 
+          SET invoice_id = NULL 
+          WHERE invoice_id IN (
+            SELECT id FROM invoices 
+            WHERE unit_id IN (SELECT id FROM units WHERE society_id = ?)
+          )
+        `, [id]);
 
-      // 2. Delete all invoices related to units of this society
-      dbService.run(`
-        DELETE FROM invoices 
-        WHERE unit_id IN (SELECT id FROM units WHERE society_id = ?)
-      `, [id]);
+        // 1. Delete all payments related to units of this society
+        dbService.run(`
+          DELETE FROM payments 
+          WHERE unit_id IN (SELECT id FROM units WHERE society_id = ?)
+        `, [id]);
 
-      // 3. Delete all units of this society
-      dbService.run('DELETE FROM units WHERE society_id = ?', [id]);
+        // 2. Delete all invoices related to units of this society
+        dbService.run(`
+          DELETE FROM invoices 
+          WHERE unit_id IN (SELECT id FROM units WHERE society_id = ?)
+        `, [id]);
 
-      // 4. Finally delete the society
-      const result = dbService.run('DELETE FROM societies WHERE id = ?', [id]);
-      return result.changes > 0;
+        // 3. Delete all units of this society
+        dbService.run('DELETE FROM units WHERE society_id = ?', [id]);
+
+        // 4. Finally delete the society
+        const result = dbService.run('DELETE FROM societies WHERE id = ?', [id]);
+        return result.changes > 0;
+      } catch (error) {
+        console.error(`Error deleting society ${id}:`, error);
+        throw error;
+      }
     });
   }
 }

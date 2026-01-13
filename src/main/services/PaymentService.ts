@@ -54,12 +54,25 @@ class PaymentService {
 
   public delete(id: number): boolean {
     return dbService.transaction(() => {
-      const payment = dbService.get<Payment>('SELECT * FROM payments WHERE id = ?', [id]);
-      if (payment && payment.invoice_id) {
-        dbService.run("UPDATE invoices SET status = 'Unpaid' WHERE id = ?", [payment.invoice_id]);
+      try {
+        const payment = dbService.get<Payment>('SELECT * FROM payments WHERE id = ?', [id]);
+        if (payment && payment.invoice_id) {
+          dbService.run("UPDATE invoices SET status = 'Unpaid' WHERE id = ?", [payment.invoice_id]);
+        }
+        const result = dbService.run('DELETE FROM payments WHERE id = ?', [id]);
+        return result.changes > 0;
+      } catch (error) {
+        console.error(`Error deleting payment ${id}:`, error);
+        throw error;
       }
-      const result = dbService.run('DELETE FROM payments WHERE id = ?', [id]);
-      return result.changes > 0;
+    });
+  }
+
+  public bulkDelete(ids: number[]): void {
+    dbService.transaction(() => {
+      for (const id of ids) {
+        this.delete(id);
+      }
     });
   }
 }

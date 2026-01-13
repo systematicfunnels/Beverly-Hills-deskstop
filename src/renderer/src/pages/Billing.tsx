@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Typography, Tag, notification, Input, Card } from 'antd';
-import { FilePdfOutlined, PlusOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { FilePdfOutlined, PlusOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -34,6 +34,7 @@ const Billing: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
@@ -46,6 +47,7 @@ const Billing: React.FC = () => {
       ]);
       setInvoices(invoicesData);
       setSocieties(societiesData);
+      setSelectedRowKeys([]);
     } catch (error) {
       message.error('Failed to fetch data');
     } finally {
@@ -110,6 +112,43 @@ const Billing: React.FC = () => {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    Modal.confirm({
+      title: 'Are you sure you want to delete this invoice?',
+      content: 'This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'No',
+      onOk: async () => {
+        await window.api.invoices.delete(id);
+        message.success('Invoice deleted');
+        fetchData();
+      },
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    Modal.confirm({
+      title: `Are you sure you want to delete ${selectedRowKeys.length} invoices?`,
+      content: 'This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'No',
+      onOk: async () => {
+        setLoading(true);
+        try {
+          await window.api.invoices.bulkDelete(selectedRowKeys as number[]);
+          message.success(`Successfully deleted ${selectedRowKeys.length} invoices`);
+          fetchData();
+        } catch (error) {
+          message.error('Failed to delete invoices');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  };
+
   const columns = [
     { 
       title: 'Inv ID', 
@@ -164,6 +203,7 @@ const Billing: React.FC = () => {
       render: (_, record: Invoice) => (
         <Space>
           <Button size="small" icon={<FilePdfOutlined />} onClick={() => handleViewPdf(record.id)}>PDF</Button>
+          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     },
@@ -247,10 +287,23 @@ const Billing: React.FC = () => {
               <Option value="Paid">Paid</Option>
               <Option value="Unpaid">Unpaid</Option>
             </Select>
+            {selectedRowKeys.length > 0 && (
+              <Button 
+                danger 
+                icon={<DeleteOutlined />} 
+                onClick={handleBulkDelete}
+              >
+                Delete Selected ({selectedRowKeys.length})
+              </Button>
+            )}
           </Space>
         </div>
 
         <Table 
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
           columns={columns} 
           dataSource={filteredInvoices} 
           rowKey="id"
