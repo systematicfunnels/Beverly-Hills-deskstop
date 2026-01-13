@@ -69,7 +69,7 @@ const Dashboard: React.FC = () => {
       </div>
       
       <Row gutter={[24, 24]}>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
               title={<Text type="secondary" strong>ACTIVE SOCIETIES</Text>}
@@ -78,7 +78,7 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
               title={<Text type="secondary" strong>TOTAL RESIDENTS</Text>}
@@ -87,7 +87,7 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
               title={<Text type="secondary" strong>PENDING INVOICES</Text>}
@@ -97,7 +97,7 @@ const Dashboard: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
               title={<Text type="secondary" strong>MONTHLY COLLECTION</Text>}
@@ -111,10 +111,10 @@ const Dashboard: React.FC = () => {
       </Row>
 
       <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
-        <Col span={16}>
+        <Col xs={24} lg={16}>
           <Card title="Quick Actions" bordered={false} headStyle={{ borderBottom: '1px solid #f0f0f0' }}>
-            <Row gutter={16}>
-              <Col span={8}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={8}>
                 <Card 
                   hoverable 
                   size="small" 
@@ -125,7 +125,7 @@ const Dashboard: React.FC = () => {
                   <Text type="secondary">Process monthly maintenance</Text>
                 </Card>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Card 
                   hoverable 
                   size="small" 
@@ -136,7 +136,7 @@ const Dashboard: React.FC = () => {
                   <Text type="secondary">Register new unit/owner</Text>
                 </Card>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Card 
                   hoverable 
                   size="small" 
@@ -150,7 +150,7 @@ const Dashboard: React.FC = () => {
             </Row>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card 
             title="Recent Activity" 
             bordered={false} 

@@ -185,7 +185,7 @@ const Billing: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: '16px' }}>
         <Title level={2} style={{ margin: 0 }}>Billing & Invoices</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleBatchGenerate}>
           Generate Invoices
@@ -256,6 +256,7 @@ const Billing: React.FC = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
+          scroll={{ x: 'max-content' }}
         />
       </Card>
 

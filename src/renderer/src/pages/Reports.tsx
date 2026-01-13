@@ -67,7 +67,7 @@ const Reports: React.FC = () => {
       <Title level={2}>Financial Reports</Title>
       
       <Row gutter={[16, 16]}>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
               title="Total Societies"
@@ -76,7 +76,7 @@ const Reports: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
               title="Total Residents"
@@ -85,7 +85,7 @@ const Reports: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
               title="Total Invoiced"
@@ -95,7 +95,7 @@ const Reports: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
               title="Total Collected"
@@ -110,7 +110,7 @@ const Reports: React.FC = () => {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <Card title="Recent Invoices">
             <Table 
               columns={columns} 
@@ -119,10 +119,11 @@ const Reports: React.FC = () => {
               pagination={false} 
               size="small"
               loading={loading}
+              scroll={{ x: 'max-content' }}
             />
           </Card>
         </Col>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <Card title="Outstanding Balance">
             <Statistic
               title="Total Pending"

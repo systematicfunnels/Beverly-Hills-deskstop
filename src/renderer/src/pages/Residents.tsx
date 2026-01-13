@@ -208,9 +208,9 @@ const Residents: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: '16px' }}>
         <Title level={2} style={{ margin: 0 }}>Residents & Units</Title>
-        <Space>
+        <Space wrap>
           <Upload beforeUpload={handleImport} showUploadList={false}>
             <Button icon={<UploadOutlined />}>Import Excel</Button>
           </Upload>
@@ -259,6 +259,7 @@ const Residents: React.FC = () => {
           rowKey="id" 
           loading={loading}
           pagination={{ pageSize: 10 }}
+          scroll={{ x: 'max-content' }}
         />
       </Card>
 
