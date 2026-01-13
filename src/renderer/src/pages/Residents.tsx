@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Input, InputNumber, message, Select, Upload, Divider } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, InputNumber, message, Select, Upload, Divider, Typography, Card } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
+
+const { Title } = Typography;
+const { Option } = Select;
+const { Search } = Input;
 
 interface Unit {
   id?: number;
@@ -24,6 +28,8 @@ const Residents: React.FC = () => {
   const [units, setUnits] = useState<Unit[]>([]);
   const [filteredUnits, setFilteredUnits] = useState<Unit[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
+  const [selectedWing, setSelectedWing] = useState<string | null>(null);
   const [societies, setSocieties] = useState<Society[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,12 +61,17 @@ const Residents: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const filtered = units.filter(unit => 
-      unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
-      unit.owner_name.toLowerCase().includes(searchText.toLowerCase())
-    );
+    const filtered = units.filter(unit => {
+      const matchSearch = unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
+                         unit.owner_name.toLowerCase().includes(searchText.toLowerCase());
+      const matchSociety = !selectedSociety || unit.society_id === selectedSociety;
+      const matchWing = !selectedWing || unit.wing === selectedWing;
+      return matchSearch && matchSociety && matchWing;
+    });
     setFilteredUnits(filtered);
-  }, [searchText, units]);
+  }, [searchText, selectedSociety, selectedWing, units]);
+
+  const wings = Array.from(new Set(units.map(u => u.wing).filter(Boolean))).sort() as string[];
 
   const handleAdd = () => {
     setEditingUnit(null);
@@ -155,15 +166,32 @@ const Residents: React.FC = () => {
       dataIndex: 'society_name', 
       key: 'society_name',
       fixed: 'left' as const, // Blueprint: fixed first column
+      sorter: (a: Unit, b: Unit) => (a.society_name || '').localeCompare(b.society_name || ''),
     },
-    { title: 'Unit No', dataIndex: 'unit_number', key: 'unit_number' },
-    { title: 'Wing', dataIndex: 'wing', key: 'wing' },
-    { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' },
+    { 
+      title: 'Unit No', 
+      dataIndex: 'unit_number', 
+      key: 'unit_number',
+      sorter: (a: Unit, b: Unit) => a.unit_number.localeCompare(b.unit_number),
+    },
+    { 
+      title: 'Wing', 
+      dataIndex: 'wing', 
+      key: 'wing',
+      sorter: (a: Unit, b: Unit) => (a.wing || '').localeCompare(b.wing || ''),
+    },
+    { 
+      title: 'Owner', 
+      dataIndex: 'owner_name', 
+      key: 'owner_name',
+      sorter: (a: Unit, b: Unit) => a.owner_name.localeCompare(b.owner_name),
+    },
     { 
       title: 'Area (sqft)', 
       dataIndex: 'area_sqft', 
       key: 'area_sqft',
       align: 'right' as const, // Blueprint: numeric totals right aligned
+      sorter: (a: Unit, b: Unit) => a.area_sqft - b.area_sqft,
     },
     {
       title: 'Actions',
@@ -179,17 +207,10 @@ const Residents: React.FC = () => {
   ];
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Residents & Units</h2>
+    <div style={{ padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Title level={2} style={{ margin: 0 }}>Residents & Units</Title>
         <Space>
-          <Input.Search
-            placeholder="Search unit or owner..."
-            allowClear
-            onSearch={setSearchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 250 }}
-          />
           <Upload beforeUpload={handleImport} showUploadList={false}>
             <Button icon={<UploadOutlined />}>Import Excel</Button>
           </Upload>
@@ -199,14 +220,47 @@ const Residents: React.FC = () => {
         </Space>
       </div>
 
-      <Table 
-        columns={columns} 
-        dataSource={filteredUnits} 
-        rowKey="id" 
-        loading={loading}
-        sticky
-        pagination={{ pageSize: 20 }}
-      />
+      <Card>
+        <div style={{ marginBottom: 24 }}>
+          <Space wrap size="middle">
+            <Search
+              placeholder="Search unit, owner..."
+              allowClear
+              onSearch={setSearchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 300 }}
+              enterButton
+              suffix={null}
+            />
+            <Select 
+              placeholder="Society" 
+              style={{ width: 200 }} 
+              allowClear
+              onChange={setSelectedSociety}
+              value={selectedSociety}
+            >
+              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+            </Select>
+            <Select 
+              placeholder="Wing" 
+              style={{ width: 150 }} 
+              allowClear
+              onChange={setSelectedWing}
+              value={selectedWing}
+            >
+              {wings.map(wing => <Option key={wing} value={wing}>{wing}</Option>)}
+            </Select>
+          </Space>
+        </div>
+
+        <Table 
+          columns={columns} 
+          dataSource={filteredUnits} 
+          rowKey="id" 
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
 
       <Modal
         title="Import Residents"

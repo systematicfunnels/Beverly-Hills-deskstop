@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Select, DatePicker, message, Input, InputNumber, Tag, Typography, Divider } from 'antd';
+import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Input, InputNumber, Tag, Typography, Divider, Card } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
 const { Option } = Select;
+const { Search } = Input;
 
 interface Payment {
   id: number;
   unit_number: string;
   owner_name: string;
+  society_name: string;
   payment_date: string;
   amount_paid: number;
   payment_mode: string;
   receipt_number: string;
+}
+
+interface Society {
+  id: number;
+  name: string;
 }
 
 interface Unit {
@@ -33,23 +40,29 @@ interface Invoice {
 
 const Payments: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [societies, setSocieties] = useState<Society[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [paymentsData, unitsData, invoicesData] = await Promise.all([
+      const [paymentsData, unitsData, invoicesData, societiesData] = await Promise.all([
         window.api.payments.getAll(),
         window.api.units.getAll(),
         window.api.invoices.getAll(),
+        window.api.societies.getAll(),
       ]);
       setPayments(paymentsData);
       setUnits(unitsData);
       setInvoices(invoicesData.filter(i => i.status === 'Unpaid'));
+      setSocieties(societiesData);
     } catch (error) {
       message.error('Failed to fetch data');
     } finally {
@@ -104,16 +117,39 @@ const Payments: React.FC = () => {
       dataIndex: 'receipt_number', 
       key: 'receipt_number',
       fixed: 'left' as const,
+      sorter: (a: Payment, b: Payment) => a.receipt_number.localeCompare(b.receipt_number),
     },
-    { title: 'Date', dataIndex: 'payment_date', key: 'payment_date' },
-    { title: 'Unit', dataIndex: 'unit_number', key: 'unit_number' },
-    { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' },
+    { 
+      title: 'Date', 
+      dataIndex: 'payment_date', 
+      key: 'payment_date',
+      sorter: (a: Payment, b: Payment) => dayjs(a.payment_date).unix() - dayjs(b.payment_date).unix(),
+    },
+    { 
+      title: 'Society', 
+      dataIndex: 'society_name', 
+      key: 'society_name',
+      sorter: (a: Payment, b: Payment) => a.society_name.localeCompare(b.society_name),
+    },
+    { 
+      title: 'Unit', 
+      dataIndex: 'unit_number', 
+      key: 'unit_number',
+      sorter: (a: Payment, b: Payment) => a.unit_number.localeCompare(b.unit_number),
+    },
+    { 
+      title: 'Owner', 
+      dataIndex: 'owner_name', 
+      key: 'owner_name',
+      sorter: (a: Payment, b: Payment) => a.owner_name.localeCompare(b.owner_name),
+    },
     { 
       title: 'Amount', 
       dataIndex: 'amount_paid', 
       key: 'amount_paid', 
       align: 'right' as const,
-      render: (val: number) => `₹${val.toFixed(2)}` 
+      render: (val: number) => `₹${val.toFixed(2)}`,
+      sorter: (a: Payment, b: Payment) => a.amount_paid - b.amount_paid,
     },
     { 
       title: 'Mode', 
@@ -132,23 +168,68 @@ const Payments: React.FC = () => {
     },
   ];
 
+  const filteredPayments = payments.filter(payment => {
+    const matchSearch = !searchText || 
+      payment.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
+      payment.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
+      payment.receipt_number.toLowerCase().includes(searchText.toLowerCase());
+    const matchSociety = !selectedSociety || societies.find(s => s.id === selectedSociety)?.name === payment.society_name;
+    const matchMode = !selectedMode || payment.payment_mode === selectedMode;
+    return matchSearch && matchSociety && matchMode;
+  });
+
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Title level={2}>Payments & Receipts</Title>
+    <div style={{ padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Title level={2} style={{ margin: 0 }}>Payments & Receipts</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           Record Payment
         </Button>
       </div>
 
-      <Table 
-        columns={columns} 
-        dataSource={payments} 
-        rowKey="id" 
-        loading={loading}
-        sticky
-        pagination={{ pageSize: 20 }}
-      />
+      <Card>
+        <div style={{ marginBottom: 24 }}>
+          <Space wrap size="middle">
+            <Search
+              placeholder="Search receipt, unit, owner..."
+              allowClear
+              onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
+              style={{ width: 300 }}
+              enterButton
+              suffix={null}
+            />
+            <Select 
+              placeholder="Society" 
+              style={{ width: 200 }} 
+              allowClear
+              onChange={setSelectedSociety}
+              value={selectedSociety}
+            >
+              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+            </Select>
+            <Select 
+              placeholder="Mode" 
+              style={{ width: 180 }} 
+              allowClear
+              onChange={setSelectedMode}
+              value={selectedMode}
+            >
+              <Option value="Transfer">Bank Transfer / UPI</Option>
+              <Option value="Cheque">Cheque</Option>
+              <Option value="Cash">Cash</Option>
+            </Select>
+          </Space>
+        </div>
+
+        <Table 
+          columns={columns} 
+          dataSource={filteredPayments} 
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
 
       <Modal
         title="Record New Payment"

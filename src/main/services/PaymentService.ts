@@ -17,9 +17,10 @@ export interface Payment {
 class PaymentService {
   public getAll(): Payment[] {
     return dbService.query<Payment>(`
-      SELECT p.*, u.unit_number, u.owner_name
+      SELECT p.*, u.unit_number, u.owner_name, s.name as society_name
       FROM payments p
       JOIN units u ON p.unit_id = u.id
+      JOIN societies s ON u.society_id = s.id
       ORDER BY p.payment_date DESC, p.id DESC
     `);
   }

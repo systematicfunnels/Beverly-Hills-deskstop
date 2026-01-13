@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Typography, Tag, notification } from 'antd';
+import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Typography, Tag, notification, Input, Card } from 'antd';
 import { FilePdfOutlined, PlusOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
 const { Option } = Select;
+const { Search } = Input;
 
 interface Invoice {
   id: number;
@@ -29,6 +30,11 @@ const Billing: React.FC = () => {
   const [societies, setSocieties] = useState<Society[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
 
   const fetchData = async () => {
@@ -81,9 +87,11 @@ const Billing: React.FC = () => {
 
   const handleViewPdf = async (id: number) => {
     try {
+      message.loading({ content: 'Generating PDF...', key: 'pdf_gen' });
       const path = await window.api.invoices.generatePdf(id);
+      message.success({ content: 'PDF Generated successfully!', key: 'pdf_gen' });
       notification.success({
-        message: 'PDF Generated',
+        message: 'PDF Ready',
         description: `Invoice PDF has been saved.`,
         btn: (
           <Button 
@@ -98,7 +106,7 @@ const Billing: React.FC = () => {
         placement: 'bottomRight',
       });
     } catch (error) {
-      message.error('Failed to generate PDF');
+      message.error({ content: 'Failed to generate PDF', key: 'pdf_gen' });
     }
   };
 
@@ -108,20 +116,36 @@ const Billing: React.FC = () => {
       dataIndex: 'id', 
       key: 'id',
       fixed: 'left' as const,
+      sorter: (a: Invoice, b: Invoice) => a.id - b.id,
     },
-    { title: 'Society', dataIndex: 'society_name', key: 'society_name' },
-    { title: 'Unit', dataIndex: 'unit_number', key: 'unit_number' },
+    { 
+      title: 'Society', 
+      dataIndex: 'society_name', 
+      key: 'society_name',
+      sorter: (a: Invoice, b: Invoice) => a.society_name.localeCompare(b.society_name),
+    },
+    { 
+      title: 'Unit', 
+      dataIndex: 'unit_number', 
+      key: 'unit_number',
+      sorter: (a: Invoice, b: Invoice) => a.unit_number.localeCompare(b.unit_number),
+    },
     { 
       title: 'Period', 
       key: 'period', 
-      render: (_, record: Invoice) => `${dayjs().month(record.billing_month - 1).format('MMMM')} ${record.billing_year}` 
+      render: (_, record: Invoice) => `${dayjs().month(record.billing_month - 1).format('MMMM')} ${record.billing_year}`,
+      sorter: (a: Invoice, b: Invoice) => {
+        if (a.billing_year !== b.billing_year) return a.billing_year - b.billing_year;
+        return a.billing_month - b.billing_month;
+      }
     },
     { 
       title: 'Amount', 
       dataIndex: 'total_amount', 
       key: 'total_amount', 
       align: 'right' as const,
-      render: (val: number) => `₹${val.toFixed(2)}` 
+      render: (val: number) => `₹${val.toFixed(2)}`,
+      sorter: (a: Invoice, b: Invoice) => a.total_amount - b.total_amount,
     },
     { 
       title: 'Status', 
@@ -130,7 +154,8 @@ const Billing: React.FC = () => {
       align: 'center' as const,
       render: (status: string) => (
         <Tag color={status === 'Paid' ? 'green' : 'volcano'}>{status}</Tag>
-      )
+      ),
+      sorter: (a: Invoice, b: Invoice) => a.status.localeCompare(b.status),
     },
     {
       title: 'Actions',
@@ -144,23 +169,95 @@ const Billing: React.FC = () => {
     },
   ];
 
+  const filteredInvoices = invoices.filter(invoice => {
+    const matchSearch = !searchText || 
+      invoice.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
+      invoice.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
+      String(invoice.id).includes(searchText);
+    const matchSociety = !selectedSociety || societies.find(s => s.id === selectedSociety)?.name === invoice.society_name;
+    const matchStatus = !selectedStatus || invoice.status === selectedStatus;
+    const matchMonth = !selectedMonth || invoice.billing_month === selectedMonth;
+    const matchYear = !selectedYear || invoice.billing_year === selectedYear;
+    return matchSearch && matchSociety && matchStatus && matchMonth && matchYear;
+  });
+
+  const years = Array.from(new Set(invoices.map(i => i.billing_year))).sort((a, b) => b - a);
+
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Title level={2}>Billing & Invoices</Title>
+    <div style={{ padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Title level={2} style={{ margin: 0 }}>Billing & Invoices</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleBatchGenerate}>
-          Generate Batch Invoices
+          Generate Invoices
         </Button>
       </div>
 
-      <Table 
-        columns={columns} 
-        dataSource={invoices} 
-        rowKey="id" 
-        loading={loading}
-        sticky
-        pagination={{ pageSize: 20 }}
-      />
+      <Card>
+        <div style={{ marginBottom: 24 }}>
+          <Space wrap size="middle">
+            <Search
+              placeholder="Search unit, owner, ID..."
+              allowClear
+              onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
+              style={{ width: 300 }}
+              enterButton
+              suffix={null}
+            />
+            <Select 
+              placeholder="Society" 
+              style={{ width: 180 }} 
+              allowClear
+              onChange={setSelectedSociety}
+              value={selectedSociety}
+            >
+              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+            </Select>
+            <Select 
+              placeholder="Month" 
+              style={{ width: 140 }} 
+              allowClear
+              onChange={setSelectedMonth}
+              value={selectedMonth}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <Option key={i + 1} value={i + 1}>
+                  {dayjs().month(i).format('MMMM')}
+                </Option>
+              ))}
+            </Select>
+            <Select 
+              placeholder="Year" 
+              style={{ width: 110 }} 
+              allowClear
+              onChange={setSelectedYear}
+              value={selectedYear}
+            >
+              {years.map(year => (
+                <Option key={year} value={year}>{year}</Option>
+              ))}
+            </Select>
+            <Select 
+              placeholder="Status" 
+              style={{ width: 130 }} 
+              allowClear
+              onChange={setSelectedStatus}
+              value={selectedStatus}
+            >
+              <Option value="Paid">Paid</Option>
+              <Option value="Unpaid">Unpaid</Option>
+            </Select>
+          </Space>
+        </div>
+
+        <Table 
+          columns={columns} 
+          dataSource={filteredInvoices} 
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
 
       <Modal
         title="Generate Batch Invoices"
