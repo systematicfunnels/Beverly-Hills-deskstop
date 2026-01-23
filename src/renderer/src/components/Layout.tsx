@@ -32,19 +32,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       label: 'Dashboard',
     },
     {
-      key: '/societies',
+      key: '/projects',
       icon: <HomeOutlined />,
-      label: 'Societies',
+      label: 'Projects',
     },
     {
-      key: '/residents',
+      key: '/units',
       icon: <UserOutlined />,
-      label: 'Residents',
+      label: 'Units',
     },
     {
       key: '/billing',
       icon: <FileTextOutlined />,
-      label: 'Billing',
+      label: 'Maintenance Letters',
     },
     {
       key: '/payments',
@@ -84,13 +84,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           height: 64, 
           display: 'flex', 
           alignItems: 'center', 
-          justifyContent: 'center', 
+          justifyContent: collapsed ? 'center' : 'flex-start', 
           padding: '0 16px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           marginBottom: 8
         }}>
           <HomeOutlined style={{ fontSize: 24, color: '#2D7A5E', marginRight: collapsed ? 0 : 12 }} />
-          {!collapsed && <span style={{ color: 'white', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 }}>BEVERLY HILLS</span>}
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+              <span style={{ color: 'white', fontSize: 18, fontWeight: 'bold', letterSpacing: 1.5 }}>BARKAT</span>
+              <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 9, fontWeight: 'normal' }}>MANAGEMENT SOLUTIONS</span>
+            </div>
+          )}
         </div>
         <Menu
           theme="dark"

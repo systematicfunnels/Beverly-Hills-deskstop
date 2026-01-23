@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Input, InputNumber, Tag, Typography, Divider, Card } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, PrinterOutlined, TableOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -11,59 +11,64 @@ interface Payment {
   id: number;
   unit_number: string;
   owner_name: string;
-  society_name: string;
+  project_name: string;
   payment_date: string;
-  amount_paid: number;
+  payment_amount: number;
   payment_mode: string;
   receipt_number: string;
 }
 
-interface Society {
+interface Project {
   id: number;
   name: string;
 }
 
 interface Unit {
   id: number;
+  project_id: number;
   unit_number: string;
   owner_name: string;
-  society_name: string;
+  project_name: string;
 }
 
-interface Invoice {
+interface MaintenanceLetter {
   id: number;
   unit_id: number;
-  total_amount: number;
-  billing_month: number;
-  billing_year: number;
+  final_amount: number;
+  financial_year: string;
+  status: string;
 }
 
 const Payments: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [societies, setSocieties] = useState<Society[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [letters, setLetters] = useState<MaintenanceLetter[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<number | null>(null);
+  const [bulkProject, setBulkProject] = useState<number | null>(null);
+  const [bulkPayments, setBulkPayments] = useState<any[]>([]);
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
+  const [bulkForm] = Form.useForm();
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [paymentsData, unitsData, invoicesData, societiesData] = await Promise.all([
+      const [paymentsData, unitsData, lettersData, projectsData] = await Promise.all([
         window.api.payments.getAll(),
         window.api.units.getAll(),
-        window.api.invoices.getAll(),
-        window.api.societies.getAll(),
+        window.api.letters.getAll(),
+        window.api.projects.getAll(),
       ]);
       setPayments(paymentsData);
       setUnits(unitsData);
-      setInvoices(invoicesData.filter(i => i.status === 'Unpaid'));
-      setSocieties(societiesData);
+      setLetters(lettersData);
+      setProjects(projectsData);
       setSelectedRowKeys([]);
     } catch (error) {
       message.error('Failed to fetch data');
@@ -81,11 +86,67 @@ const Payments: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleBulkAdd = () => {
+    bulkForm.resetFields();
+    setBulkPayments([]);
+    setBulkProject(null);
+    setIsBulkModalOpen(true);
+  };
+
+  const handleBulkProjectChange = (projectId: number) => {
+    setBulkProject(projectId);
+    const projectUnits = units.filter(u => projects.find(p => p.id === projectId)?.name === u.project_name);
+    setBulkPayments(projectUnits.map(u => ({
+      unit_id: u.id,
+      project_id: u.project_id,
+      unit_number: u.unit_number,
+      owner_name: u.owner_name,
+      payment_amount: 0,
+      payment_mode: 'Transfer',
+      payment_date: dayjs()
+    })));
+  };
+
+  const handleBulkModalOk = async () => {
+    try {
+      const values = await bulkForm.validateFields();
+      const validPayments = bulkPayments.filter(p => p.payment_amount > 0).map(p => ({
+        unit_id: p.unit_id,
+        project_id: p.project_id,
+        payment_amount: p.payment_amount,
+        payment_mode: p.payment_mode,
+        payment_date: p.payment_date.format('YYYY-MM-DD'),
+        reference_number: values.reference_number,
+        remarks: values.remarks
+      }));
+
+      if (validPayments.length === 0) {
+        message.warning('Please enter amount for at least one unit');
+        return;
+      }
+
+      setLoading(true);
+      for (const payment of validPayments) {
+        await window.api.payments.create(payment);
+      }
+      message.success(`Successfully recorded ${validPayments.length} payments`);
+      setIsBulkModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error(error);
+      message.error('Failed to record bulk payments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleModalOk = async () => {
     try {
       const values = await form.validateFields();
+      const selectedUnit = units.find(u => u.id === values.unit_id);
       const paymentData = {
         ...values,
+        project_id: selectedUnit?.project_id,
         payment_date: values.payment_date.format('YYYY-MM-DD'),
       };
       
@@ -135,6 +196,19 @@ const Payments: React.FC = () => {
     });
   };
 
+  const handlePrintReceipt = async (id: number) => {
+    try {
+      setLoading(true);
+      const pdfPath = await window.api.payments.generateReceiptPdf(id);
+      await window.api.shell.showItemInFolder(pdfPath);
+    } catch (error) {
+      console.error(error);
+      message.error('Failed to generate receipt');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const columns = [
     { 
       title: 'Receipt #', 
@@ -150,10 +224,10 @@ const Payments: React.FC = () => {
       sorter: (a: Payment, b: Payment) => dayjs(a.payment_date).unix() - dayjs(b.payment_date).unix(),
     },
     { 
-      title: 'Society', 
-      dataIndex: 'society_name', 
-      key: 'society_name',
-      sorter: (a: Payment, b: Payment) => a.society_name.localeCompare(b.society_name),
+      title: 'Project', 
+      dataIndex: 'project_name', 
+      key: 'project_name',
+      sorter: (a: Payment, b: Payment) => a.project_name.localeCompare(b.project_name),
     },
     { 
       title: 'Unit', 
@@ -169,11 +243,11 @@ const Payments: React.FC = () => {
     },
     { 
       title: 'Amount', 
-      dataIndex: 'amount_paid', 
-      key: 'amount_paid', 
+      dataIndex: 'payment_amount', 
+      key: 'payment_amount',
       align: 'right' as const,
       render: (val: number) => `₹${val.toFixed(2)}`,
-      sorter: (a: Payment, b: Payment) => a.amount_paid - b.amount_paid,
+      sorter: (a: Payment, b: Payment) => a.payment_amount - b.payment_amount,
     },
     { 
       title: 'Mode', 
@@ -187,7 +261,10 @@ const Payments: React.FC = () => {
       key: 'actions',
       align: 'right' as const,
       render: (_, record: Payment) => (
-        <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id)} />
+        <Space>
+          <Button size="small" icon={<PrinterOutlined />} onClick={() => handlePrintReceipt(record.id)} title="Print Receipt" />
+          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id)} title="Delete Payment" />
+        </Space>
       ),
     },
   ];
@@ -197,18 +274,23 @@ const Payments: React.FC = () => {
       payment.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
       payment.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
       payment.receipt_number.toLowerCase().includes(searchText.toLowerCase());
-    const matchSociety = !selectedSociety || societies.find(s => s.id === selectedSociety)?.name === payment.society_name;
+    const matchProject = !selectedProject || projects.find(s => s.id === selectedProject)?.name === payment.project_name;
     const matchMode = !selectedMode || payment.payment_mode === selectedMode;
-    return matchSearch && matchSociety && matchMode;
+    return matchSearch && matchProject && matchMode;
   });
 
   return (
     <div style={{ padding: '24px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: '16px' }}>
         <Title level={2} style={{ margin: 0 }}>Payments & Receipts</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          Record Payment
-        </Button>
+        <Space>
+          <Button icon={<TableOutlined />} onClick={handleBulkAdd}>
+            Bulk Record
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            Record Payment
+          </Button>
+        </Space>
       </div>
 
       <Card>
@@ -224,13 +306,13 @@ const Payments: React.FC = () => {
               suffix={null}
             />
             <Select 
-              placeholder="Society" 
+              placeholder="Project" 
               style={{ width: 200 }} 
               allowClear
-              onChange={setSelectedSociety}
-              value={selectedSociety}
+              onChange={setSelectedProject}
+              value={selectedProject}
             >
-              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+              {projects.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
             </Select>
             <Select 
               placeholder="Mode" 
@@ -278,28 +360,50 @@ const Payments: React.FC = () => {
         width={600}
       >
         <Form form={form} layout="vertical">
-          <Divider orientation={"left" as any} style={{ marginTop: 0 }}>Unit & Invoice</Divider>
+          <Divider orientation={"left" as any} style={{ marginTop: 0 }}>Unit & Letter</Divider>
           <Form.Item name="unit_id" label="Select Unit" rules={[{ required: true }]}>
-            <Select showSearch placeholder="Search Unit" filterOption={(input, option) => (option?.children as any).toLowerCase().includes(input.toLowerCase())}>
-              {units.map(u => <Option key={u.id} value={u.id}>{u.society_name} - {u.unit_number} ({u.owner_name})</Option>)}
+            <Select 
+              showSearch 
+              placeholder="Search Unit" 
+              filterOption={(input, option) => (option?.children as any).toLowerCase().includes(input.toLowerCase())}
+              onChange={() => {
+                form.setFieldsValue({ letter_id: undefined });
+              }}
+            >
+              {units.map(u => <Option key={u.id} value={u.id}>{u.project_name} - {u.unit_number} ({u.owner_name})</Option>)}
             </Select>
           </Form.Item>
           
-          <Form.Item name="invoice_id" label="Link to Invoice (Optional)">
-            <Select placeholder="Select Unpaid Invoice">
-              {invoices.map(i => (
-                <Option key={i.id} value={i.id}>
-                  INV-{i.id} ({dayjs().month(i.billing_month-1).format('MMM')} {i.billing_year}) - ₹{i.total_amount}
-                </Option>
-              ))}
-            </Select>
+          <Form.Item 
+            noStyle 
+            shouldUpdate={(prevValues, currentValues) => prevValues.unit_id !== currentValues.unit_id}
+          >
+            {({ getFieldValue }) => {
+              const unitId = getFieldValue('unit_id');
+              const unitLetters = letters.filter(l => l.unit_id === unitId);
+              return (
+                <Form.Item 
+                  name="letter_id" 
+                  label="Maintenance Letter"
+                  extra={unitLetters.length === 0 ? "No maintenance letters found for this unit" : ""}
+                >
+                  <Select placeholder="Select Maintenance Letter" allowClear disabled={unitLetters.length === 0}>
+                    {unitLetters.map(letter => (
+                      <Option key={letter.id} value={letter.id}>
+                        {letter.financial_year} - ₹{letter.final_amount}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              );
+            }}
           </Form.Item>
 
           <Divider orientation={"left" as any}>Payment Details</Divider>
           <Form.Item name="payment_date" label="Payment Date" rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="amount_paid" label="Amount (₹)" rules={[{ required: true }]}>
+          <Form.Item name="payment_amount" label="Amount (₹)" rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
 
@@ -317,6 +421,91 @@ const Payments: React.FC = () => {
           <Form.Item name="remarks" label="Remarks">
             <Input.TextArea rows={2} />
           </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title="Bulk Payment Entry"
+        open={isBulkModalOpen}
+        onOk={handleBulkModalOk}
+        onCancel={() => setIsBulkModalOpen(false)}
+        confirmLoading={loading}
+        width={1000}
+      >
+        <Form form={bulkForm} layout="vertical">
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+            <Form.Item label="Project" style={{ flex: 1 }}>
+              <Select placeholder="Select Project" onChange={handleBulkProjectChange} value={bulkProject}>
+                {projects.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+              </Select>
+            </Form.Item>
+            <Form.Item name="payment_date" label="Payment Date" initialValue={dayjs()} style={{ flex: 1 }}>
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="payment_mode" label="Default Mode" initialValue="Transfer" style={{ flex: 1 }}>
+              <Select onChange={(val) => setBulkPayments(prev => prev.map(p => ({ ...p, payment_mode: val })))}>
+                <Option value="Transfer">Bank Transfer / UPI</Option>
+                <Option value="Cheque">Cheque</Option>
+                <Option value="Cash">Cash</Option>
+              </Select>
+            </Form.Item>
+          </div>
+
+          <Table
+            dataSource={bulkPayments}
+            pagination={false}
+            scroll={{ y: 400 }}
+            rowKey="unit_id"
+            columns={[
+              { title: 'Unit #', dataIndex: 'unit_number', key: 'unit_number', width: 100 },
+              { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' },
+              { 
+                title: 'Amount (₹)', 
+                key: 'amount', 
+                width: 150,
+                render: (_, record, index) => (
+                  <InputNumber 
+                    min={0} 
+                    style={{ width: '100%' }} 
+                    value={record.payment_amount}
+                    onChange={(val) => {
+                      const newPayments = [...bulkPayments];
+                      newPayments[index].payment_amount = val || 0;
+                      setBulkPayments(newPayments);
+                    }}
+                  />
+                )
+              },
+              {
+                title: 'Mode',
+                key: 'mode',
+                width: 150,
+                render: (_, record, index) => (
+                  <Select
+                    style={{ width: '100%' }}
+                    value={record.payment_mode}
+                    onChange={(val) => {
+                      const newPayments = [...bulkPayments];
+                      newPayments[index].payment_mode = val;
+                      setBulkPayments(newPayments);
+                    }}
+                  >
+                    <Option value="Transfer">Transfer</Option>
+                    <Option value="Cheque">Cheque</Option>
+                    <Option value="Cash">Cash</Option>
+                  </Select>
+                )
+              }
+            ]}
+          />
+
+          <div style={{ marginTop: '16px', display: 'flex', gap: '16px' }}>
+            <Form.Item name="reference_number" label="Common Ref # (Optional)" style={{ flex: 1 }}>
+              <Input placeholder="UTR / Cheque No" />
+            </Form.Item>
+            <Form.Item name="remarks" label="Common Remarks (Optional)" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </div>

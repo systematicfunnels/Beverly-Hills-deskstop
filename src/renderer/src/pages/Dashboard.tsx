@@ -15,20 +15,21 @@ const { Title, Text } = Typography;
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState({
-    societies: 0,
-    residents: 0,
-    unpaidInvoices: 0,
-    monthlyCollection: 0
+    projects: 0,
+    units: 0,
+    unpaidLetters: 0,
+    monthlyCollection: 0,
+    totalBilled: 0
   });
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [societies, units, invoices, payments] = await Promise.all([
-          window.api.societies.getAll(),
+        const [projects, units, letters, payments] = await Promise.all([
+          window.api.projects.getAll(),
           window.api.units.getAll(),
-          window.api.invoices.getAll(),
+          window.api.letters.getAll(),
           window.api.payments.getAll()
         ]);
 
@@ -39,16 +40,19 @@ const Dashboard: React.FC = () => {
           .filter(p => dayjs(p.payment_date).month() + 1 === currentMonth && dayjs(p.payment_date).year() === currentYear)
           .reduce((sum, p) => sum + p.amount_paid, 0);
 
+        const totalBilled = letters.reduce((sum, l) => sum + l.final_amount, 0);
+
         setStats({
-          societies: societies.length,
-          residents: units.length,
-          unpaidInvoices: invoices.filter(i => i.status === 'Unpaid').length,
-          monthlyCollection
+          projects: projects.length,
+          units: units.length,
+          unpaidLetters: letters.filter(l => l.status === 'Generated' || l.status === 'Modified').length,
+          monthlyCollection,
+          totalBilled
         });
 
-        // Combine recent invoices and payments for activity feed
+        // Combine recent letters and payments for activity feed
         const activities = [
-          ...invoices.slice(0, 5).map(i => ({ type: 'invoice', date: i.invoice_date, title: `Invoice Generated: ${i.unit_number}`, amount: i.total_amount })),
+          ...letters.slice(0, 5).map(l => ({ type: 'letter', date: l.generated_date, title: `Letter Generated: ${l.unit_number}`, amount: l.final_amount })),
           ...payments.slice(0, 5).map(p => ({ type: 'payment', date: p.payment_date, title: `Payment Received: ${p.unit_number}`, amount: p.amount_paid }))
         ].sort((a, b) => dayjs(b.date).unix() - dayjs(a.date).unix()).slice(0, 6);
 
@@ -69,29 +73,29 @@ const Dashboard: React.FC = () => {
       </div>
       
       <Row gutter={[24, 24]}>
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={4}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
-              title={<Text type="secondary" strong>ACTIVE SOCIETIES</Text>}
-              value={stats.societies} 
+              title={<Text type="secondary" strong>PROJECTS</Text>}
+              value={stats.projects} 
               prefix={<HomeOutlined style={{ color: '#2D7A5E' }} />} 
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={4}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
-              title={<Text type="secondary" strong>TOTAL RESIDENTS</Text>}
-              value={stats.residents} 
+              title={<Text type="secondary" strong>UNITS</Text>}
+              value={stats.units} 
               prefix={<UserOutlined style={{ color: '#2D7A5E' }} />} 
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={4}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
-              title={<Text type="secondary" strong>PENDING INVOICES</Text>}
-              value={stats.unpaidInvoices} 
+              title={<Text type="secondary" strong>PENDING</Text>}
+              value={stats.unpaidLetters} 
               prefix={<FileTextOutlined style={{ color: '#cf1322' }} />} 
               valueStyle={{ color: '#cf1322' }}
             />
@@ -100,7 +104,18 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} className="admin-stat-card">
             <Statistic 
-              title={<Text type="secondary" strong>MONTHLY COLLECTION</Text>}
+              title={<Text type="secondary" strong>TOTAL BILLED</Text>}
+              value={stats.totalBilled} 
+              prefix={<DollarCircleOutlined style={{ color: '#1890ff' }} />} 
+              precision={2}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bordered={false} className="admin-stat-card">
+            <Statistic 
+              title={<Text type="secondary" strong>COLLECTION</Text>}
               value={stats.monthlyCollection} 
               prefix={<DollarCircleOutlined style={{ color: '#3f8600' }} />} 
               precision={2}
@@ -121,8 +136,8 @@ const Dashboard: React.FC = () => {
                   style={{ textAlign: 'center', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 4 }}
                   onClick={() => navigate('/billing')}
                 >
-                  <Title level={5} style={{ margin: '8px 0' }}>Generate Bills</Title>
-                  <Text type="secondary">Process monthly maintenance</Text>
+                  <Title level={5} style={{ margin: '8px 0' }}>Generate Letters</Title>
+                  <Text type="secondary">Process annual maintenance</Text>
                 </Card>
               </Col>
               <Col xs={24} sm={8}>
@@ -130,9 +145,9 @@ const Dashboard: React.FC = () => {
                   hoverable 
                   size="small" 
                   style={{ textAlign: 'center', background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 4 }}
-                  onClick={() => navigate('/residents')}
+                  onClick={() => navigate('/units')}
                 >
-                  <Title level={5} style={{ margin: '8px 0' }}>Add Resident</Title>
+                  <Title level={5} style={{ margin: '8px 0' }}>Add Unit</Title>
                   <Text type="secondary">Register new unit/owner</Text>
                 </Card>
               </Col>
@@ -166,7 +181,7 @@ const Dashboard: React.FC = () => {
                     description={
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text type="secondary" style={{ fontSize: 12 }}>{item.date}</Text>
-                        <Tag color={item.type === 'invoice' ? 'orange' : 'green'} style={{ borderRadius: 2, margin: 0 }}>
+                        <Tag color={item.type === 'letter' ? 'orange' : 'green'} style={{ borderRadius: 2, margin: 0 }}>
                           ₹{item.amount.toFixed(2)}
                         </Tag>
                       </div>

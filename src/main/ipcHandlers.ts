@@ -1,84 +1,44 @@
 import { ipcMain, shell } from 'electron';
 import { dbService } from './db/database';
-import { societyService, Society } from './services/SocietyService';
+import { projectService, Project } from './services/ProjectService';
 import { unitService, Unit } from './services/UnitService';
-import { invoiceService } from './services/InvoiceService';
+import { maintenanceLetterService } from './services/MaintenanceLetterService';
 import { paymentService, Payment } from './services/PaymentService';
+import { maintenanceRateService, MaintenanceRate, MaintenanceSlab } from './services/MaintenanceRateService';
 
 export function registerIpcHandlers() {
-  // Societies
-  ipcMain.handle('get-societies', () => {
-    return societyService.getAll();
+  // Projects
+  ipcMain.handle('get-projects', () => {
+    return projectService.getAll();
   });
 
-  ipcMain.handle('get-society', (_, id: number) => {
-    return societyService.getById(id);
+  ipcMain.handle('get-project', (_, id: number) => {
+    return projectService.getById(id);
   });
 
-  ipcMain.handle('create-society', (_, society: Society) => {
-    return societyService.create(society);
+  ipcMain.handle('create-project', (_, project: Project) => {
+    return projectService.create(project);
   });
 
-  ipcMain.handle('update-society', (_, id: number, society: Partial<Society>) => {
-    return societyService.update(id, society);
+  ipcMain.handle('update-project', (_, id: number, project: Partial<Project>) => {
+    return projectService.update(id, project);
   });
 
-  ipcMain.handle('delete-society', (_, id: number) => {
-    return societyService.delete(id);
+  ipcMain.handle('delete-project', (_, id: number) => {
+    return projectService.delete(id);
+  });
+
+  ipcMain.handle('bulk-delete-projects', (_, ids: number[]) => {
+    return projectService.bulkDelete(ids);
   });
 
   // Units
   ipcMain.handle('get-units', () => {
-    try {
-      // Debug: Check database structure
-      const fkStatus = dbService.get('PRAGMA foreign_keys');
-      console.log('Foreign Keys status:', JSON.stringify(fkStatus, null, 2));
-      
-      const tables = dbService.query("SELECT name FROM sqlite_master WHERE type='table'");
-      console.log('Tables in DB:', JSON.stringify(tables, null, 2));
-
-      // Force enable FK if it's OFF for some reason
-      if ((fkStatus as any).foreign_keys === 0) {
-        console.warn('WARNING: Foreign keys were OFF. Enabling them now.');
-        dbService.run('PRAGMA foreign_keys = ON');
-      }
-      
-      const invoicesFk = dbService.query('PRAGMA foreign_key_list(invoices)');
-      const paymentsFk = dbService.query('PRAGMA foreign_key_list(payments)');
-      console.log('Invoices FK:', JSON.stringify(invoicesFk, null, 2));
-      console.log('Payments FK:', JSON.stringify(paymentsFk, null, 2));
-      
-      // Check for any other tables that might have FKs
-      for (const table of tables as any[]) {
-        const fks = dbService.query(`PRAGMA foreign_key_list(${table.name})`);
-        if ((fks as any[]).length > 0) {
-          console.log(`Foreign keys for ${table.name}:`, JSON.stringify(fks, null, 2));
-        }
-        const sql = dbService.get<{sql: string}>(`SELECT sql FROM sqlite_master WHERE name = ?`, [table.name])?.sql;
-        console.log(`SQL for ${table.name}:`, sql);
-      }
-      
-      // Check for triggers
-      const triggers = dbService.query("SELECT name, tbl_name FROM sqlite_master WHERE type='trigger'");
-      if (triggers.length > 0) {
-        console.log('Triggers in DB:', JSON.stringify(triggers, null, 2));
-      }
-      
-      // Check for foreign key violations
-      const violations = dbService.query('PRAGMA foreign_key_check');
-      if (violations.length > 0) {
-        console.log('Foreign key violations found:', JSON.stringify(violations, null, 2));
-      }
-      
-      return unitService.getAll();
-    } catch (error) {
-      console.error('Error in get-units handler:', error);
-      throw error;
-    }
+    return unitService.getAll();
   });
 
-  ipcMain.handle('get-units-by-society', (_, societyId: number) => {
-    return unitService.getBySociety(societyId);
+  ipcMain.handle('get-units-by-project', (_, projectId: number) => {
+    return unitService.getByProject(projectId);
   });
 
   ipcMain.handle('create-unit', (_, unit: Unit) => {
@@ -101,25 +61,33 @@ export function registerIpcHandlers() {
     return unitService.bulkCreate(units);
   });
 
-  // Invoices
-  ipcMain.handle('get-invoices', () => {
-    return invoiceService.getAllInvoices();
+  // Maintenance Letters (formerly Invoices)
+  ipcMain.handle('get-letters', () => {
+    return maintenanceLetterService.getAll();
   });
 
-  ipcMain.handle('create-batch-invoices', (_, societyId: number, month: number, year: number, date: string, dueDate: string) => {
-    return invoiceService.createBatchInvoices(societyId, month, year, date, dueDate);
+  ipcMain.handle('get-letter', (_, id: number) => {
+    return maintenanceLetterService.getById(id);
   });
 
-  ipcMain.handle('delete-invoice', (_, id: number) => {
-    return invoiceService.delete(id);
+  ipcMain.handle('create-batch-letters', (_, { projectId, financialYear, letterDate, dueDate, addOns }) => {
+    return maintenanceLetterService.createBatch(projectId, financialYear, letterDate, dueDate, addOns);
   });
 
-  ipcMain.handle('bulk-delete-invoices', (_, ids: number[]) => {
-    return invoiceService.bulkDelete(ids);
+  ipcMain.handle('delete-letter', (_, id: number) => {
+    return maintenanceLetterService.delete(id);
   });
 
-  ipcMain.handle('generate-invoice-pdf', (_, invoiceId: number) => {
-    return invoiceService.generateInvoicePdf(invoiceId);
+  ipcMain.handle('bulk-delete-letters', (_, ids: number[]) => {
+    return maintenanceLetterService.bulkDelete(ids);
+  });
+
+  ipcMain.handle('generate-letter-pdf', async (_, id: number) => {
+    return await maintenanceLetterService.generatePdf(id);
+  });
+
+  ipcMain.handle('open-pdf', (_, filePath: string) => {
+    shell.openPath(filePath);
   });
 
   // Payments
@@ -139,8 +107,115 @@ export function registerIpcHandlers() {
     return paymentService.bulkDelete(ids);
   });
 
+  ipcMain.handle('generate-receipt-pdf', async (_, id: number) => {
+    return await paymentService.generateReceiptPdf(id);
+  });
+
+  // Maintenance Rates & Slabs
+  ipcMain.handle('get-rates', () => {
+    return maintenanceRateService.getAll();
+  });
+
+  ipcMain.handle('get-rates-by-project', (_, projectId: number) => {
+    return maintenanceRateService.getByProject(projectId);
+  });
+
+  ipcMain.handle('create-rate', (_, rate: MaintenanceRate) => {
+    return maintenanceRateService.create(rate);
+  });
+
+  ipcMain.handle('update-rate', (_, id: number, rate: Partial<MaintenanceRate>) => {
+    return maintenanceRateService.update(id, rate);
+  });
+
+  ipcMain.handle('delete-rate', (_, id: number) => {
+    return maintenanceRateService.delete(id);
+  });
+
+  ipcMain.handle('get-slabs', (_, rateId: number) => {
+    return maintenanceRateService.getSlabs(rateId);
+  });
+
+  ipcMain.handle('add-slab', (_, slab: MaintenanceSlab) => {
+    return maintenanceRateService.addSlab(slab);
+  });
+
+  ipcMain.handle('delete-slab', (_, id: number) => {
+    return maintenanceRateService.deleteSlab(id);
+  });
+
+  // Settings
+  ipcMain.handle('get-settings', () => {
+    return dbService.query('SELECT * FROM settings');
+  });
+
+  ipcMain.handle('update-setting', (_, key: string, value: string) => {
+    return dbService.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  });
+
   // Shell
   ipcMain.handle('show-item-in-folder', (_, path: string) => {
     shell.showItemInFolder(path);
+  });
+
+  // Database Repair
+  ipcMain.handle('database-repair', () => {
+    const logs: string[] = [];
+    try {
+      logs.push('Starting database check...');
+      
+      // 1. Check foreign key status
+      const fkStatus = dbService.get('PRAGMA foreign_keys');
+      logs.push(`Foreign Keys status: ${JSON.stringify(fkStatus)}`);
+      
+      // 2. Check for violations
+      const violations = dbService.query('PRAGMA foreign_key_check');
+      if (violations.length > 0) {
+        logs.push(`Found ${violations.length} foreign key violations!`);
+      } else {
+        logs.push('No foreign key violations found.');
+      }
+      
+      // 3. Log all table schemas for debugging
+      const tables = dbService.query("SELECT name, sql FROM sqlite_master WHERE type='table'");
+      logs.push('Table structures:');
+      (tables as any[]).forEach(t => {
+        logs.push(`- Table ${t.name}: ${t.sql}`);
+        const fks = dbService.query(`PRAGMA foreign_key_list(${t.name})`);
+        if ((fks as any[]).length > 0) {
+          logs.push(`  FKs for ${t.name}: ${JSON.stringify(fks)}`);
+        }
+      });
+
+      // 4. Try to fix orphaned records in payments (most common issue)
+      logs.push('Checking for orphaned payments...');
+      const orphanedPayments = dbService.query('SELECT id FROM payments WHERE unit_id NOT IN (SELECT id FROM units)');
+      if ((orphanedPayments as any[]).length > 0) {
+        logs.push(`Cleaning up ${(orphanedPayments as any[]).length} orphaned payments...`);
+        dbService.run('DELETE FROM payments WHERE unit_id NOT IN (SELECT id FROM units)');
+      }
+
+      logs.push('Checking for orphaned maintenance letters...');
+      const orphanedLetters = dbService.query('SELECT id FROM maintenance_letters WHERE unit_id NOT IN (SELECT id FROM units)');
+      if ((orphanedLetters as any[]).length > 0) {
+        logs.push(`Cleaning up ${(orphanedLetters as any[]).length} orphaned maintenance letters...`);
+        dbService.run('DELETE FROM maintenance_letters WHERE unit_id NOT IN (SELECT id FROM units)');
+      }
+
+      logs.push('Database check completed successfully.');
+      return {
+        success: true,
+        violations,
+        logs
+      };
+    } catch (error: any) {
+      logs.push(`FATAL ERROR during repair: ${error.message}`);
+      console.error('Database repair failed:', error);
+      return {
+        success: false,
+        violations: [],
+        logs
+      };
+    }
   });
 }

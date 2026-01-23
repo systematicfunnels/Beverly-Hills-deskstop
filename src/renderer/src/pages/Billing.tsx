@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Typography, Tag, notification, Input, Card } from 'antd';
+import { Table, Button, Space, Modal, Form, Select, DatePicker, message, Typography, Tag, notification, Input, Card, Divider, InputNumber } from 'antd';
 import { FilePdfOutlined, PlusOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
@@ -7,33 +7,31 @@ const { Title } = Typography;
 const { Option } = Select;
 const { Search } = Input;
 
-interface Invoice {
+interface MaintenanceLetter {
   id: number;
   unit_number: string;
   owner_name: string;
-  society_name: string;
-  billing_month: number;
-  billing_year: number;
-  invoice_date: string;
-  total_amount: number;
+  project_name: string;
+  financial_year: string;
+  generated_date: string;
+  final_amount: number;
   status: string;
   pdf_path?: string;
 }
 
-interface Society {
+interface Project {
   id: number;
   name: string;
 }
 
 const Billing: React.FC = () => {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [societies, setSocieties] = useState<Society[]>([]);
+  const [letters, setLetters] = useState<MaintenanceLetter[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedSociety, setSelectedSociety] = useState<number | null>(null);
+  const [selectedProject, setSelectedProject] = useState<number | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
@@ -41,12 +39,12 @@ const Billing: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [invoicesData, societiesData] = await Promise.all([
-        window.api.invoices.getAll(),
-        window.api.societies.getAll(),
+      const [lettersData, projectsData] = await Promise.all([
+        window.api.letters.getAll(),
+        window.api.projects.getAll(),
       ]);
-      setInvoices(invoicesData);
-      setSocieties(societiesData);
+      setLetters(lettersData);
+      setProjects(projectsData);
       setSelectedRowKeys([]);
     } catch (error) {
       message.error('Failed to fetch data');
@@ -67,21 +65,25 @@ const Billing: React.FC = () => {
   const handleModalOk = async () => {
     try {
       const values = await form.validateFields();
-      const { society_id, period, invoice_date, due_date } = values;
+      const { project_id, financial_year, letter_date, due_date, add_ons } = values;
       
-      const month = period.month() + 1;
-      const year = period.year();
-      const dateStr = invoice_date.format('YYYY-MM-DD');
-      const dueStr = due_date.format('YYYY-MM-DD');
+      const letterDate = letter_date.format('YYYY-MM-DD');
+      const dueDate = due_date.format('YYYY-MM-DD');
 
       setLoading(true);
-      await window.api.invoices.createBatch(society_id, month, year, dateStr, dueStr);
-      message.success('Batch invoices generated successfully');
+      await window.api.letters.createBatch({
+        projectId: project_id,
+        financialYear: financial_year,
+        letterDate,
+        dueDate,
+        addOns: add_ons || []
+      });
+      message.success('Maintenance letters generated successfully');
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
       console.error(error);
-      message.error('Failed to generate batch invoices');
+      message.error('Failed to generate maintenance letters');
     } finally {
       setLoading(false);
     }
@@ -89,12 +91,12 @@ const Billing: React.FC = () => {
 
   const handleViewPdf = async (id: number) => {
     try {
-      message.loading({ content: 'Generating PDF...', key: 'pdf_gen' });
-      const path = await window.api.invoices.generatePdf(id);
-      message.success({ content: 'PDF Generated successfully!', key: 'pdf_gen' });
+      message.loading({ content: 'Generating Letter...', key: 'pdf_gen' });
+      const path = await window.api.letters.generatePdf(id);
+      message.success({ content: 'Maintenance Letter generated successfully!', key: 'pdf_gen' });
       notification.success({
-        message: 'PDF Ready',
-        description: `Invoice PDF has been saved.`,
+        message: 'Letter Ready',
+        description: `Maintenance Letter has been saved.`,
         btn: (
           <Button 
             type="primary" 
@@ -108,20 +110,20 @@ const Billing: React.FC = () => {
         placement: 'bottomRight',
       });
     } catch (error) {
-      message.error({ content: 'Failed to generate PDF', key: 'pdf_gen' });
+      message.error({ content: 'Failed to generate letter', key: 'pdf_gen' });
     }
   };
 
   const handleDelete = async (id: number) => {
     Modal.confirm({
-      title: 'Are you sure you want to delete this invoice?',
+      title: 'Are you sure you want to delete this maintenance letter?',
       content: 'This action cannot be undone.',
       okText: 'Yes, Delete',
       okType: 'danger',
       cancelText: 'No',
       onOk: async () => {
-        await window.api.invoices.delete(id);
-        message.success('Invoice deleted');
+        await window.api.letters.delete(id);
+        message.success('Maintenance letter deleted');
         fetchData();
       },
     });
@@ -129,7 +131,7 @@ const Billing: React.FC = () => {
 
   const handleBulkDelete = async () => {
     Modal.confirm({
-      title: `Are you sure you want to delete ${selectedRowKeys.length} invoices?`,
+      title: `Are you sure you want to delete ${selectedRowKeys.length} maintenance letters?`,
       content: 'This action cannot be undone.',
       okText: 'Yes, Delete',
       okType: 'danger',
@@ -137,11 +139,11 @@ const Billing: React.FC = () => {
       onOk: async () => {
         setLoading(true);
         try {
-          await window.api.invoices.bulkDelete(selectedRowKeys as number[]);
-          message.success(`Successfully deleted ${selectedRowKeys.length} invoices`);
+          await window.api.letters.bulkDelete(selectedRowKeys as number[]);
+          message.success(`Successfully deleted ${selectedRowKeys.length} maintenance letters`);
           fetchData();
         } catch (error) {
-          message.error('Failed to delete invoices');
+          message.error('Failed to delete maintenance letters');
         } finally {
           setLoading(false);
         }
@@ -151,142 +153,87 @@ const Billing: React.FC = () => {
 
   const columns = [
     { 
-      title: 'Inv ID', 
+      title: 'ID', 
       dataIndex: 'id', 
       key: 'id',
       fixed: 'left' as const,
-      sorter: (a: Invoice, b: Invoice) => a.id - b.id,
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.id - b.id,
     },
     { 
-      title: 'Society', 
-      dataIndex: 'society_name', 
-      key: 'society_name',
-      sorter: (a: Invoice, b: Invoice) => a.society_name.localeCompare(b.society_name),
+      title: 'Project', 
+      dataIndex: 'project_name', 
+      key: 'project_name',
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.project_name.localeCompare(b.project_name),
     },
     { 
       title: 'Unit', 
       dataIndex: 'unit_number', 
       key: 'unit_number',
-      sorter: (a: Invoice, b: Invoice) => a.unit_number.localeCompare(b.unit_number),
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.unit_number.localeCompare(b.unit_number),
     },
     { 
-      title: 'Period', 
-      key: 'period', 
-      render: (_, record: Invoice) => `${dayjs().month(record.billing_month - 1).format('MMMM')} ${record.billing_year}`,
-      sorter: (a: Invoice, b: Invoice) => {
-        if (a.billing_year !== b.billing_year) return a.billing_year - b.billing_year;
-        return a.billing_month - b.billing_month;
-      }
+      title: 'FY', 
+      dataIndex: 'financial_year', 
+      key: 'financial_year',
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.financial_year.localeCompare(b.financial_year),
     },
     { 
       title: 'Amount', 
-      dataIndex: 'total_amount', 
-      key: 'total_amount', 
+      dataIndex: 'final_amount', 
+      key: 'final_amount',
       align: 'right' as const,
       render: (val: number) => `₹${val.toFixed(2)}`,
-      sorter: (a: Invoice, b: Invoice) => a.total_amount - b.total_amount,
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.final_amount - b.final_amount,
     },
     { 
       title: 'Status', 
       dataIndex: 'status', 
       key: 'status',
-      align: 'center' as const,
       render: (status: string) => (
-        <Tag color={status === 'Paid' ? 'green' : 'volcano'}>{status}</Tag>
-      ),
-      sorter: (a: Invoice, b: Invoice) => a.status.localeCompare(b.status),
+        <Tag color={status === 'Modified' ? 'orange' : 'green'}>{status}</Tag>
+      )
     },
     {
       title: 'Actions',
       key: 'actions',
       align: 'right' as const,
-      render: (_, record: Invoice) => (
-        <Space>
-          <Button size="small" icon={<FilePdfOutlined />} onClick={() => handleViewPdf(record.id)}>PDF</Button>
-          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id)} />
+      fixed: 'right' as const,
+      render: (_: any, record: MaintenanceLetter) => (
+        <Space size="middle">
+          <Button 
+            type="primary"
+            icon={<FilePdfOutlined />} 
+            onClick={() => handleViewPdf(record.id)}
+          >
+            View PDF
+          </Button>
+          <Button 
+            icon={<DeleteOutlined />} 
+            danger 
+            onClick={() => handleDelete(record.id)}
+          />
         </Space>
       ),
     },
   ];
 
-  const filteredInvoices = invoices.filter(invoice => {
-    const matchSearch = !searchText || 
-      invoice.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
-      invoice.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
-      String(invoice.id).includes(searchText);
-    const matchSociety = !selectedSociety || societies.find(s => s.id === selectedSociety)?.name === invoice.society_name;
-    const matchStatus = !selectedStatus || invoice.status === selectedStatus;
-    const matchMonth = !selectedMonth || invoice.billing_month === selectedMonth;
-    const matchYear = !selectedYear || invoice.billing_year === selectedYear;
-    return matchSearch && matchSociety && matchStatus && matchMonth && matchYear;
+  const filteredLetters = letters.filter(letter => {
+    const matchesProject = !selectedProject || letter.project_name === projects.find(p => p.id === selectedProject)?.name;
+    const matchesStatus = !selectedStatus || letter.status === selectedStatus;
+    const matchesYear = !selectedYear || letter.financial_year === selectedYear;
+    const matchesSearch = !searchText || 
+      letter.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
+      letter.unit_number.toLowerCase().includes(searchText.toLowerCase());
+    
+    return matchesProject && matchesStatus && matchesYear && matchesSearch;
   });
 
-  const years = Array.from(new Set(invoices.map(i => i.billing_year))).sort((a, b) => b - a);
-
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: '16px' }}>
-        <Title level={2} style={{ margin: 0 }}>Billing & Invoices</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleBatchGenerate}>
-          Generate Invoices
-        </Button>
-      </div>
-
-      <Card>
-        <div style={{ marginBottom: 24 }}>
-          <Space wrap size="middle">
-            <Search
-              placeholder="Search unit, owner, ID..."
-              allowClear
-              onChange={(e) => setSearchText(e.target.value)}
-              onSearch={setSearchText}
-              style={{ width: 300 }}
-              enterButton
-              suffix={null}
-            />
-            <Select 
-              placeholder="Society" 
-              style={{ width: 180 }} 
-              allowClear
-              onChange={setSelectedSociety}
-              value={selectedSociety}
-            >
-              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-            </Select>
-            <Select 
-              placeholder="Month" 
-              style={{ width: 140 }} 
-              allowClear
-              onChange={setSelectedMonth}
-              value={selectedMonth}
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <Option key={i + 1} value={i + 1}>
-                  {dayjs().month(i).format('MMMM')}
-                </Option>
-              ))}
-            </Select>
-            <Select 
-              placeholder="Year" 
-              style={{ width: 110 }} 
-              allowClear
-              onChange={setSelectedYear}
-              value={selectedYear}
-            >
-              {years.map(year => (
-                <Option key={year} value={year}>{year}</Option>
-              ))}
-            </Select>
-            <Select 
-              placeholder="Status" 
-              style={{ width: 130 }} 
-              allowClear
-              onChange={setSelectedStatus}
-              value={selectedStatus}
-            >
-              <Option value="Paid">Paid</Option>
-              <Option value="Unpaid">Unpaid</Option>
-            </Select>
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <Title level={4} style={{ margin: 0 }}>Maintenance Letters</Title>
+          <Space>
             {selectedRowKeys.length > 0 && (
               <Button 
                 danger 
@@ -296,46 +243,157 @@ const Billing: React.FC = () => {
                 Delete Selected ({selectedRowKeys.length})
               </Button>
             )}
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleBatchGenerate}>
+              Generate Batch
+            </Button>
           </Space>
         </div>
 
-        <Table 
-          rowSelection={{
-            selectedRowKeys,
-            onChange: (keys) => setSelectedRowKeys(keys),
-          }}
-          columns={columns} 
-          dataSource={filteredInvoices} 
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
+        <Space wrap>
+          <Search
+            placeholder="Search unit or owner..."
+            allowClear
+            onSearch={setSearchText}
+            style={{ width: 200 }}
+          />
+          <Select
+            placeholder="Filter by Project"
+            style={{ width: 200 }}
+            allowClear
+            onChange={setSelectedProject}
+          >
+            {projects.map(p => (
+              <Option key={p.id} value={p.id}>{p.name}</Option>
+            ))}
+          </Select>
+          <Select
+            placeholder="Filter by Status"
+            style={{ width: 150 }}
+            allowClear
+            onChange={setSelectedStatus}
+          >
+            <Option value="Generated">Generated</Option>
+            <Option value="Modified">Modified</Option>
+          </Select>
+          <Select
+            placeholder="Filter by FY"
+            style={{ width: 150 }}
+            allowClear
+            onChange={setSelectedYear}
+          >
+            {Array.from(new Set(letters.map(l => l.financial_year))).map(fy => (
+              <Option key={fy} value={fy}>{fy}</Option>
+            ))}
+          </Select>
+        </Space>
       </Card>
 
+      <Table
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+        }}
+        columns={columns}
+        dataSource={filteredLetters}
+        rowKey="id"
+        loading={loading}
+        pagination={{ pageSize: 10 }}
+      />
+
       <Modal
-        title="Generate Batch Invoices"
+        title="Generate Batch Maintenance Letters"
         open={isModalOpen}
         onOk={handleModalOk}
         onCancel={() => setIsModalOpen(false)}
+        width={700}
         confirmLoading={loading}
-        width={600}
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="society_id" label="Society" rules={[{ required: true }]}>
-            <Select placeholder="Select Society">
-              {societies.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
-            </Select>
-          </Form.Item>
-          <Form.Item name="period" label="Billing Period (Month/Year)" rules={[{ required: true }]}>
-            <DatePicker picker="month" style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="invoice_date" label="Invoice Date" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="due_date" label="Due Date" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ 
+            letter_date: dayjs(), 
+            due_date: dayjs().add(15, 'day'),
+            financial_year: `${dayjs().year()}-${(dayjs().year() + 1).toString().slice(2)}`
+          }}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <Form.Item
+              name="project_id"
+              label="Select Project"
+              rules={[{ required: true, message: 'Please select project' }]}
+              style={{ gridColumn: 'span 2' }}
+            >
+              <Select placeholder="Select a project">
+                {projects.map(p => (
+                  <Option key={p.id} value={p.id}>{p.name}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="financial_year"
+              label="Financial Year (e.g., 2024-25)"
+              rules={[{ required: true, message: 'Please enter financial year' }]}
+            >
+              <Input placeholder="2024-25" />
+            </Form.Item>
+
+            <Form.Item
+              name="letter_date"
+              label="Letter Date"
+              rules={[{ required: true, message: 'Please select letter date' }]}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item
+              name="due_date"
+              label="Due Date"
+              rules={[{ required: true, message: 'Please select due date' }]}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Divider style={{ gridColumn: 'span 2', margin: '8px 0' }}>Add-ons (Optional)</Divider>
+
+            <Form.List name="add_ons">
+              {(fields, { add, remove }) => (
+                <div style={{ gridColumn: 'span 2' }}>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'addon_name']}
+                        rules={[{ required: true, message: 'Name required' }]}
+                      >
+                        <Input placeholder="Addon Name (e.g. Penalty)" />
+                      </Form.Item>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'addon_amount']}
+                        rules={[{ required: true, message: 'Amount required' }]}
+                      >
+                        <InputNumber placeholder="Amount" style={{ width: 120 }} prefix="₹" />
+                      </Form.Item>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'remarks']}
+                      >
+                        <Input placeholder="Remarks" />
+                      </Form.Item>
+                      <Button type="text" danger onClick={() => remove(name)} icon={<DeleteOutlined />} />
+                    </Space>
+                  ))}
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                      Add Item
+                    </Button>
+                  </Form.Item>
+                </div>
+              )}
+            </Form.List>
+          </div>
         </Form>
       </Modal>
     </div>

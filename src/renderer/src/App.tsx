@@ -2,8 +2,8 @@ import React from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ConfigProvider } from 'antd';
-import Societies from './pages/Societies';
-import Residents from './pages/Residents';
+import Projects from './pages/Projects';
+import Units from './pages/Units';
 import Dashboard from './pages/Dashboard';
 import Billing from './pages/Billing';
 import Payments from './pages/Payments';
@@ -43,8 +43,8 @@ const App: React.FC = () => {
         <Layout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/societies" element={<Societies />} />
-            <Route path="/residents" element={<Residents />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/units" element={<Units />} />
             <Route path="/billing" element={<Billing />} />
             <Route path="/payments" element={<Payments />} />
             <Route path="/reports" element={<Reports />} />

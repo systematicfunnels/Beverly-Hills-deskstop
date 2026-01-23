@@ -1,14 +1,18 @@
-import React from 'react';
-import { Card, Button, Typography, Space, Divider, message, Alert } from 'antd';
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Card, Button, Typography, Space, Divider, message, Alert, Modal, List } from 'antd';
+import { DownloadOutlined, UploadOutlined, ToolOutlined } from '@ant-design/icons';
 
 const { Title, Paragraph, Text } = Typography;
 
 const Settings: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [repairResults, setRepairResults] = useState<any>(null);
+  const [isRepairModalOpen, setIsRepairModalOpen] = useState(false);
+
   const handleExport = async () => {
     try {
       // In a real app, this would trigger a main process save dialog
-      message.info('Database export feature coming soon. Please manually backup database.sqlite');
+      message.info('Database export feature coming soon. Please manually backup beverly-hills.db');
     } catch (error) {
       message.error('Export failed');
     }
@@ -16,6 +20,25 @@ const Settings: React.FC = () => {
 
   const handleImport = async () => {
     message.warning('Importing data will overwrite existing records. Please be careful.');
+  };
+
+  const handleDatabaseRepair = async () => {
+    setLoading(true);
+    try {
+      // We'll add this handler to ipcHandlers.ts
+      const results = await (window.api as any).database.repair();
+      setRepairResults(results);
+      setIsRepairModalOpen(true);
+      if (results.success) {
+        message.success('Database check completed');
+      } else {
+        message.error('Database repair failed');
+      }
+    } catch (error: any) {
+      message.error('Database repair failed: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,25 +72,83 @@ const Settings: React.FC = () => {
               </Button>
             </div>
           </div>
+
+          <Divider />
+
+          <div>
+            <Title level={5}>Database Tools</Title>
+            <Text type="secondary">Check for data integrity issues and repair common database errors.</Text>
+            <div style={{ marginTop: 8 }}>
+              <Button 
+                icon={<ToolOutlined />} 
+                onClick={handleDatabaseRepair}
+                loading={loading}
+              >
+                Check & Repair Database
+              </Button>
+            </div>
+          </div>
         </Space>
       </Card>
 
-      <Card title="About Beverly Hills Billing">
+      <Card title="System Diagnostics" style={{ marginBottom: 24 }}>
         <Space direction="vertical">
           <Text>Version: 1.0.0</Text>
-          <Text>Database Type: SQLite 3</Text>
+          <Text>Database Type: SQLite 3 (better-sqlite3)</Text>
           <Text>Environment: Desktop Application (Electron)</Text>
           <Alert
-            message="Offline Mode"
-            description="This application works entirely offline. No data is sent to external servers."
-            type="info"
+            message="Foreign Key Support"
+            description="Foreign key constraints are enabled to ensure data integrity."
+            type="success"
             showIcon
           />
         </Space>
       </Card>
+
+      <Modal
+        title="Database Check Results"
+        open={isRepairModalOpen}
+        onOk={() => setIsRepairModalOpen(false)}
+        onCancel={() => setIsRepairModalOpen(false)}
+        width={700}
+      >
+        {repairResults && (
+          <div style={{ maxHeight: 400, overflow: 'auto' }}>
+            <Alert 
+              message={repairResults.success ? "Success" : "Issues Found"}
+              type={repairResults.success ? "success" : "warning"}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+            
+            <Title level={5}>Foreign Key Violations</Title>
+            {repairResults.violations && repairResults.violations.length > 0 ? (
+              <List
+                size="small"
+                bordered
+                dataSource={repairResults.violations}
+                renderItem={(item: any) => (
+                  <List.Item>
+                    <Text type="danger">Violation in table <b>{item.table}</b> at row <b>{item.rowid}</b>: Missing parent in table <b>{item.parent}</b></Text>
+                  </List.Item>
+                )}
+              />
+            ) : (
+              <Text type="success">No violations found.</Text>
+            )}
+
+            <Divider />
+
+            <Title level={5}>System Logs</Title>
+            <pre style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, fontSize: '11px' }}>
+              {repairResults.logs.join('\n')}
+            </pre>
+          </div>
+        )}
+      </Modal>
       
       <div style={{ marginTop: 24, textAlign: 'center' }}>
-        <Text type="secondary">Designed for residential society management.</Text>
+        <Text type="secondary">Designed for property maintenance management.</Text>
       </div>
     </div>
   );
