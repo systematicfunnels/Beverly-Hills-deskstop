@@ -1,239 +1,328 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Input, message, Divider, Upload } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
-import * as XLSX from 'xlsx';
+import React, { useState, useEffect } from 'react'
+import { Table, Button, Space, Modal, Form, Input, message, Divider, Upload, Card, Select, Tag } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined, SearchOutlined } from '@ant-design/icons'
+import * as XLSX from 'xlsx'
+import { Project } from '@preload/types'
 
-interface Project {
-  id?: number;
-  name: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-  status?: string;
-  letterhead_path?: string;
-  bank_name?: string;
-  account_no?: string;
-  ifsc_code?: string;
-  qr_code_path?: string;
-}
+const { Option } = Select
 
 const Projects: React.FC = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [form] = Form.useForm();
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  
+  // Filter states
+  const [searchText, setSearchText] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
+  const [cityFilter, setCityFilter] = useState<string | null>(null)
+  
+  const [form] = Form.useForm()
 
-  const fetchProjects = async () => {
-    setLoading(true);
+  const fetchProjects = async (): Promise<void> => {
+    setLoading(true)
     try {
-      const data = await window.api.projects.getAll();
-      setProjects(data);
+      const data = await window.api.projects.getAll()
+      setProjects(data)
     } catch (error) {
-      message.error('Failed to fetch projects');
-      console.error(error);
+      message.error('Failed to fetch projects')
+      console.error(error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    fetchProjects()
+  }, [])
 
-  const handleAdd = () => {
-    setEditingProject(null);
-    form.resetFields();
-    setIsModalOpen(true);
-  };
+  // Filtered data
+  const filteredProjects = projects.filter((p) => {
+    const matchesSearch = !searchText || p.name.toLowerCase().includes(searchText.toLowerCase())
+    const projectStatus = p.status || 'Inactive'
+    const matchesStatus = !statusFilter || projectStatus === statusFilter
+    const matchesCity = !cityFilter || p.city === cityFilter
+    return matchesSearch && matchesStatus && matchesCity
+  })
 
-  const handleImport = async (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+  // Get unique cities for filter
+  const uniqueCities = Array.from(new Set(projects.map(p => p.city).filter(Boolean)))
+
+  const handleAdd = (): void => {
+    setEditingProject(null)
+    form.resetFields()
+    setIsModalOpen(true)
+  }
+
+  const handleImport = async (file: File): Promise<boolean> => {
+    const reader = new FileReader()
+    reader.onload = async (e): Promise<void> => {
       try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet) as any[];
-        
+        const data = e.target?.result
+        const workbook = XLSX.read(data, { type: 'binary' })
+        const sheetName = workbook.SheetNames[0]
+        const sheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[]
+
         if (jsonData.length === 0) {
-          message.warning('No data found in the Excel file');
-          return;
+          message.warning('No data found in the Excel file')
+          return
         }
 
-        const projectsToImport = jsonData.map(row => {
-          const normalizedRow: any = {};
-          Object.keys(row).forEach(key => {
-            normalizedRow[String(key).toLowerCase().trim()] = row[key];
-          });
+        const projectsToImport = (jsonData
+          .map((row) => {
+            const normalizedRow: Record<string, unknown> = {}
+            Object.keys(row).forEach((key) => {
+              normalizedRow[String(key).toLowerCase().trim()] = row[key]
+            })
 
-          const getValue = (keys: string[]) => {
-            for (const key of keys) {
-              if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
-                return normalizedRow[key];
+            const getValue = (keys: string[]): unknown => {
+              for (const key of keys) {
+                if (
+                  normalizedRow[key] !== undefined &&
+                  normalizedRow[key] !== null &&
+                  String(normalizedRow[key]).trim() !== ''
+                ) {
+                  return normalizedRow[key]
+                }
               }
+              return undefined
             }
-            return undefined;
-          };
 
-          const name = String(getValue(['name', 'project name', 'project', 'building name', 'building', 'particulars']) || '').trim();
-          
-          // If name is empty or looks like a header/id column, skip
-          if (!name || /^(name|project|building|id|no|particulars)$/i.test(name)) return null;
+            const name = String(
+              getValue([
+                'name',
+                'project name',
+                'project',
+                'building name',
+                'building',
+                'particulars'
+              ]) || ''
+            ).trim()
 
-          return {
-            name,
-            address: String(getValue(['address', 'location', 'site address']) || '').trim(),
-            city: String(getValue(['city', 'town']) || 'Ahmedabad').trim(),
-            state: String(getValue(['state', 'region']) || 'Gujarat').trim(),
-            pincode: String(getValue(['pincode', 'pin', 'zip', 'zipcode']) || '').trim(),
-            status: 'Active',
-            bank_name: String(getValue(['bank', 'bank name', 'bank_name', 'bank details']) || '').trim(),
-            account_no: String(getValue(['account', 'account no', 'account number', 'acc no', 'a/c no']) || '').trim(),
-            ifsc_code: String(getValue(['ifsc', 'ifsc code', 'ifsc_code', 'ifsc code']) || '').trim(),
-          };
-        }).filter(p => p !== null && p.name);
+            // If name is empty or looks like a header/id column, skip
+            if (!name || /^(name|project|building|id|no|particulars)$/i.test(name)) return null
+
+            return {
+              name,
+              address: String(getValue(['address', 'location', 'site address']) || '').trim(),
+              city: String(getValue(['city', 'town']) || 'Ahmedabad').trim(),
+              state: String(getValue(['state', 'region']) || 'Gujarat').trim(),
+              pincode: String(getValue(['pincode', 'pin', 'zip', 'zipcode']) || '').trim(),
+              status: 'Active',
+              bank_name: String(
+                getValue(['bank', 'bank name', 'bank_name', 'bank details']) || ''
+              ).trim(),
+              account_no: String(
+                getValue(['account', 'account no', 'account number', 'acc no', 'a/c no']) || ''
+              ).trim(),
+              ifsc_code: String(
+                getValue(['ifsc', 'ifsc code', 'ifsc_code', 'ifsc code']) || ''
+              ).trim()
+            }
+          })
+          .filter((p) => p !== null && !!p.name) as Project[])
 
         if (projectsToImport.length === 0) {
-          message.warning('No valid projects found (Name is required)');
-          return;
+          message.warning('No valid projects found (Name is required)')
+          return
         }
 
-        setLoading(true);
+        setLoading(true)
         for (const p of projectsToImport) {
-          await window.api.projects.create(p);
+          await window.api.projects.create(p)
         }
-        message.success(`Successfully imported ${projectsToImport.length} projects`);
-        fetchProjects();
+        message.success(`Successfully imported ${projectsToImport.length} projects`)
+        fetchProjects()
       } catch (err) {
-        console.error(err);
-        message.error('Failed to parse Excel file');
+        console.error(err)
+        message.error('Failed to parse Excel file')
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
-    reader.readAsBinaryString(file);
-    return false;
-  };
+    }
+    reader.readAsBinaryString(file)
+    return false
+  }
 
-  const handleEdit = (record: Project) => {
-    setEditingProject(record);
-    form.setFieldsValue(record);
-    setIsModalOpen(true);
-  };
+  const handleEdit = (record: Project): void => {
+    setEditingProject(record)
+    form.setFieldsValue(record)
+    setIsModalOpen(true)
+  }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number): Promise<void> => {
     Modal.confirm({
       title: 'Are you sure you want to delete this project?',
       content: 'This action cannot be undone.',
       onOk: async () => {
         try {
-          await window.api.projects.delete(id);
-          message.success('Project deleted successfully');
-          fetchProjects();
+          await window.api.projects.delete(id)
+          message.success('Project deleted successfully')
+          fetchProjects()
         } catch (error) {
-          message.error('Failed to delete project');
+          message.error('Failed to delete project')
         }
-      },
-    });
-  };
+      }
+    })
+  }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = (): void => {
     Modal.confirm({
       title: `Delete ${selectedRowKeys.length} projects?`,
-      content: 'This action cannot be undone. All related units, maintenance letters, and payments will also be deleted.',
+      content:
+        'This action cannot be undone. All related units, maintenance letters, and payments will also be deleted.',
       okText: 'Delete All',
       okType: 'danger',
       onOk: async () => {
         try {
-          await window.api.projects.bulkDelete(selectedRowKeys as number[]);
-          message.success(`${selectedRowKeys.length} projects deleted successfully`);
-          setSelectedRowKeys([]);
-          fetchProjects();
+          await window.api.projects.bulkDelete(selectedRowKeys as number[])
+          message.success(`${selectedRowKeys.length} projects deleted successfully`)
+          setSelectedRowKeys([])
+          fetchProjects()
         } catch (error) {
-          console.error(error);
-          message.error('Failed to delete projects');
+          console.error(error)
+          message.error('Failed to delete projects')
         }
-      },
-    });
-  };
-
-  const handleModalOk = async () => {
-    try {
-      const values = await form.validateFields();
-      if (editingProject?.id) {
-        await window.api.projects.update(editingProject.id, values);
-        message.success('Project updated successfully');
-      } else {
-        await window.api.projects.create(values);
-        message.success('Project created successfully');
       }
-      setIsModalOpen(false);
-      fetchProjects();
+    })
+  }
+
+  const handleModalOk = async (): Promise<void> => {
+    try {
+      const values = await form.validateFields()
+      if (editingProject?.id) {
+        await window.api.projects.update(editingProject.id, values)
+        message.success('Project updated successfully')
+      } else {
+        await window.api.projects.create(values)
+        message.success('Project created successfully')
+      }
+      setIsModalOpen(false)
+      fetchProjects()
     } catch (error) {
-      console.error(error);
+      console.error(error)
     }
-  };
+  }
 
   const columns = [
-    { 
-      title: 'Name', 
-      dataIndex: 'name', 
-      key: 'name',
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name'
+    },
+    {
+      title: 'Address',
+      dataIndex: 'address',
+      key: 'address',
+      ellipsis: true
     },
     { title: 'City', dataIndex: 'city', key: 'city' },
-    { title: 'Bank Name', dataIndex: 'bank_name', key: 'bank_name' },
-    { title: 'Account No', dataIndex: 'account_no', key: 'account_no' },
-    { title: 'Status', dataIndex: 'status', key: 'status' },
+    {
+      title: 'Units',
+      dataIndex: 'unit_count',
+      key: 'unit_count',
+      align: 'center' as const
+    },
+    { 
+      title: 'Status', 
+      dataIndex: 'status', 
+      key: 'status',
+      render: (status: string) => (
+        <Tag color={status === 'Active' ? 'success' : 'error'}>
+          {status || 'Inactive'}
+        </Tag>
+      )
+    },
+    {
+      title: 'Created At',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (date: string) => (date ? new Date(date).toLocaleDateString() : '-')
+    },
     {
       title: 'Actions',
       key: 'actions',
       align: 'right' as const,
-      render: (_: any, record: Project) => (
+      render: (_: unknown, record: Project) => (
         <Space size="middle">
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Button icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id!)} />
         </Space>
-      ),
-    },
-  ];
+      )
+    }
+  ]
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Projects</h2>
-        <Space>
-          {selectedRowKeys.length > 0 && (
-            <Button 
-              danger 
-              icon={<DeleteOutlined />} 
-              onClick={handleBulkDelete}
-            >
-              Delete Selected ({selectedRowKeys.length})
+      <Card style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Projects</h2>
+          <Space>
+            {selectedRowKeys.length > 0 && (
+              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+                Delete Selected ({selectedRowKeys.length})
+              </Button>
+            )}
+            <Upload beforeUpload={handleImport} showUploadList={false}>
+              <Button icon={<UploadOutlined />}>Import Excel</Button>
+            </Upload>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              Add Project
             </Button>
-          )}
-          <Upload beforeUpload={handleImport} showUploadList={false}>
-            <Button icon={<UploadOutlined />}>
-              Import Excel
-            </Button>
-          </Upload>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            Add Project
-          </Button>
-        </Space>
-      </div>
+          </Space>
+        </div>
 
-      <Table 
+        <Space wrap>
+          <Input
+            placeholder="Search Project Name..."
+            prefix={<SearchOutlined />}
+            style={{ width: 250 }}
+            allowClear
+            onChange={(e) => setSearchText(e.target.value)}
+          />
+          <Select
+            placeholder="Filter by Status"
+            style={{ width: 150 }}
+            allowClear
+            onChange={(val) => setStatusFilter(val)}
+            value={statusFilter}
+          >
+            <Option value="Active">Active</Option>
+            <Option value="Inactive">Inactive</Option>
+          </Select>
+          <Select
+            placeholder="Filter by City"
+            style={{ width: 150 }}
+            allowClear
+            onChange={(val) => setCityFilter(val)}
+            value={cityFilter}
+          >
+            {uniqueCities.map((city) => (
+              <Option key={city} value={city}>
+                {city}
+              </Option>
+            ))}
+          </Select>
+        </Space>
+      </Card>
+
+      <Table
         rowSelection={{
           selectedRowKeys,
-          onChange: setSelectedRowKeys,
+          onChange: setSelectedRowKeys
         }}
-        dataSource={projects} 
-        columns={columns} 
-        rowKey="id" 
+        dataSource={filteredProjects}
+        columns={columns}
+        rowKey="id"
         loading={loading}
       />
 
@@ -259,11 +348,7 @@ const Projects: React.FC = () => {
               <Input />
             </Form.Item>
 
-            <Form.Item
-              name="address"
-              label="Address"
-              style={{ gridColumn: 'span 2' }}
-            >
+            <Form.Item name="address" label="Address" style={{ gridColumn: 'span 2' }}>
               <Input.TextArea rows={2} />
             </Form.Item>
 
@@ -300,7 +385,7 @@ const Projects: React.FC = () => {
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default Projects;
+export default Projects

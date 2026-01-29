@@ -25,7 +25,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "antd": "^6.2.0",
-    "better-sqlite3": "^12.6.0",
+    "better-sqlite3": "^12.6.2",
     "lucide-react": "^0.562.0",
     "pdf-lib": "^1.17.1",
     "react-router-dom": "^7.12.0",

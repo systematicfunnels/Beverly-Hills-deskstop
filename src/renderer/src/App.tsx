@@ -1,14 +1,14 @@
-import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
-import { ConfigProvider } from 'antd';
-import Projects from './pages/Projects';
-import Units from './pages/Units';
-import Dashboard from './pages/Dashboard';
-import Billing from './pages/Billing';
-import Payments from './pages/Payments';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
+import React from 'react'
+import { HashRouter as Router, Routes, Route } from 'react-router-dom'
+import Layout from './components/Layout'
+import { ConfigProvider } from 'antd'
+import Projects from './pages/Projects'
+import Units from './pages/Units'
+import Dashboard from './pages/Dashboard'
+import Billing from './pages/Billing'
+import Payments from './pages/Payments'
+import Reports from './pages/Reports'
+import Settings from './pages/Settings'
 
 const App: React.FC = () => {
   return (
@@ -19,24 +19,24 @@ const App: React.FC = () => {
           borderRadius: 4, // Admin-optimized: tighter corners
           fontSize: 14,
           controlHeight: 36, // Component height 36px
-          paddingContentHorizontal: 16,
+          paddingContentHorizontal: 16
         },
         components: {
           Table: {
             headerBg: '#fafafa',
             headerBorderRadius: 0,
-            cellPaddingBlock: 12, // Achieve ~44px row height
+            cellPaddingBlock: 12 // Achieve ~44px row height
           },
           Button: {
-            controlHeight: 32, // Compact buttons for admin
+            controlHeight: 32 // Compact buttons for admin
           },
           Input: {
-            controlHeight: 36,
+            controlHeight: 36
           },
           Select: {
-            controlHeight: 36,
+            controlHeight: 36
           }
-        },
+        }
       }}
     >
       <Router>
@@ -53,7 +53,7 @@ const App: React.FC = () => {
         </Layout>
       </Router>
     </ConfigProvider>
-  );
-};
+  )
+}
 
-export default App;
+export default App

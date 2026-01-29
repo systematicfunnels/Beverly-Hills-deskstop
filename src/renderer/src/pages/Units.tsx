@@ -1,209 +1,290 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Input, InputNumber, message, Select, Upload, Divider, Typography, Card, Alert } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
-import * as XLSX from 'xlsx';
+import React, { useState, useEffect } from 'react'
+import {
+  Table,
+  Button,
+  Space,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  message,
+  Select,
+  Upload,
+  Divider,
+  Typography,
+  Card,
+  Alert
+} from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
+import * as XLSX from 'xlsx'
+import { Unit, Project } from '@preload/types'
 
-const { Title } = Typography;
-const { Option } = Select;
-const { Search } = Input;
+const { Title } = Typography
+const { Option } = Select
+const { Search } = Input
 
-interface Unit {
-  id?: number;
-  project_id: number;
-  unit_number: string;
-  wing?: string;
-  unit_type: string; // Residential, Commercial
-  area_sqft: number;
-  owner_name: string;
-  contact_number?: string;
-  email?: string;
-  status: string; // Occupied, Vacant
-  project_name?: string;
-}
-
-interface Project {
-  id: number;
-  name: string;
+interface ImportUnitPreview extends Unit {
+  previewId: string
+  [key: string]: unknown
 }
 
 const Units: React.FC = () => {
-  const [units, setUnits] = useState<Unit[]>([]);
-  const [filteredUnits, setFilteredUnits] = useState<Unit[]>([]);
-  const [searchText, setSearchText] = useState('');
-  const [selectedProject, setSelectedProject] = useState<number | null>(null);
-  const [selectedWing, setSelectedWing] = useState<string | null>(null);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [importData, setImportData] = useState<any[]>([]);
-  const [mappedPreview, setMappedPreview] = useState<any[]>([]);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importProjectId, setImportProjectId] = useState<number | null>(null);
-  const [form] = Form.useForm();
+  const [units, setUnits] = useState<Unit[]>([])
+  const [filteredUnits, setFilteredUnits] = useState<Unit[]>([])
+  const [searchText, setSearchText] = useState('')
+  const [selectedProject, setSelectedProject] = useState<number | null>(null)
+  const [selectedWing, setSelectedWing] = useState<string | null>(null)
+  const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
+  const [selectedOccupancy, setSelectedOccupancy] = useState<string | null>(null)
+  const [areaRange, setAreaRange] = useState<[number | null, number | null]>([null, null])
+  
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
+  
+  const [importData, setImportData] = useState<Record<string, unknown>[]>([])
+  const [mappedPreview, setMappedPreview] = useState<ImportUnitPreview[]>([])
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [importProjectId, setImportProjectId] = useState<number | null>(null)
+  const [ignoreEmptyUnits, setIgnoreEmptyUnits] = useState(true)
+  const [defaultArea, setDefaultArea] = useState<number>(0)
+  
+  const [form] = Form.useForm()
 
   // Helper function to map a single row to a Unit object
-  const mapRowToUnit = (row: any, projectId: number | null): any => {
+  const mapRowToUnit = (row: Record<string, unknown>, projectId: number | null): ImportUnitPreview | null => {
     // Unique ID for preview editing
-    const previewId = row.__id || Math.random().toString(36).substr(2, 9);
-    
+    const previewId = (row.__id as string) || Math.random().toString(36).substr(2, 9)
+
     // Create a normalized version of the row with lowercase keys and trimmed values
-    const normalizedRow: any = {};
-    Object.keys(row).forEach(key => {
-      const normalizedKey = String(key).toLowerCase().trim();
-      normalizedRow[normalizedKey] = row[key];
-    });
+    const normalizedRow: Record<string, unknown> = {}
+    Object.keys(row).forEach((key) => {
+      const normalizedKey = String(key).toLowerCase().trim()
+      normalizedRow[normalizedKey] = row[key]
+    })
 
     // Helper to find value by multiple possible keys
-    const getValue = (possibleKeys: string[]) => {
+    const getValue = (possibleKeys: string[]): unknown => {
       for (const key of possibleKeys) {
-        if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
-          return normalizedRow[key];
+        if (
+          normalizedRow[key] !== undefined &&
+          normalizedRow[key] !== null &&
+          String(normalizedRow[key]).trim() !== ''
+        ) {
+          return normalizedRow[key]
         }
       }
-      return undefined;
-    };
+      return undefined
+    }
 
     // Auto-detect project if not selected
-    let effectiveProjectId = projectId;
+    let effectiveProjectId = projectId
     if (!effectiveProjectId) {
-      const projectName = String(getValue(['project', 'building', 'project name']) || '').trim().toLowerCase();
+      const projectName = String(getValue(['project', 'building', 'project name']) || '')
+        .trim()
+        .toLowerCase()
       if (projectName) {
-        const matchedProject = projects.find(p => p.name.toLowerCase() === projectName);
+        const matchedProject = projects.find((p) => p.name.toLowerCase() === projectName)
         if (matchedProject) {
-          effectiveProjectId = matchedProject.id;
+          effectiveProjectId = matchedProject.id!
         }
       }
     }
 
     // Try to find Unit Number - expanded search
-    let unitNumber = String(getValue([
-      'unit number', 'unit', 'unit_no', 'unitno', 'particulars', 
-      'flat', 'flat no', 'flat_no', 'flat number',
-      'plot', 'plot no', 'plot_no', 'plot number',
-      'member code', 'id', 'shop', 'office'
-    ]) || '').trim();
+    let unitNumber = String(
+      getValue([
+        'unit number',
+        'unit',
+        'unit_no',
+        'unitno',
+        'particulars',
+        'flat',
+        'flat no',
+        'flat_no',
+        'flat number',
+        'plot',
+        'plot no',
+        'plot_no',
+        'plot number',
+        'member code',
+        'id',
+        'shop',
+        'office'
+      ]) || ''
+    ).trim()
+
+    // If unitNumber is empty and we should ignore it, return null
+    if (!unitNumber && ignoreEmptyUnits) return null
 
     // Try to find Owner Name - expanded search
-    let ownerName = String(getValue([
-      'owner', 'name', 'owner name', 'ownername', 'to', 'respected sir / madam',
-      'member', 'member name', 'unit owner', 'unit owner name', 'customer', 'client'
-    ]) || '').trim();
+    let ownerName = String(
+      getValue([
+        'owner',
+        'name',
+        'owner name',
+        'ownername',
+        'to',
+        'respected sir / madam',
+        'member',
+        'member name',
+        'unit owner',
+        'unit owner name',
+        'customer',
+        'client'
+      ]) || ''
+    ).trim()
 
     // Fallback 1: Extract unit from owner name if it looks like "Name D-3/403" or "Name (A-101)"
     if (!unitNumber && ownerName) {
-      const unitPattern = /([A-Z][-/\s]?\d+([-/\s]\d+)?)/i;
-      const match = ownerName.match(unitPattern);
+      const unitPattern = /([A-Z][-/\s]?\d+([-/\s]\d+)?)/i
+      const match = ownerName.match(unitPattern)
       if (match) {
-        unitNumber = match[0].trim();
-        ownerName = ownerName.replace(match[0], '').replace(/[()]/g, '').trim();
+        unitNumber = match[0].trim()
+        ownerName = ownerName.replace(match[0], '').replace(/[()]/g, '').trim()
       }
     }
 
     // Fallback 2: Scan ALL columns for anything that looks like a unit number if still empty
     if (!unitNumber) {
-      const unitRegex = /^[A-Z][-/\s]?\d+([-/\s]\d+)?$/i;
+      const unitRegex = /^[A-Z][-/\s]?\d+([-/\s]\d+)?$/i
       for (const key of Object.keys(normalizedRow)) {
-        const val = String(normalizedRow[key]).trim();
+        const val = String(normalizedRow[key]).trim()
         if (unitRegex.test(val)) {
-          unitNumber = val;
-          break;
+          unitNumber = val
+          break
         }
       }
     }
-    
+
+    // Final check for empty unit
+    if (!unitNumber && ignoreEmptyUnits) return null
+
     // If unitNumber is still empty, we still want to show the row but allow manual entry
     // We only skip if the row is completely empty or just header text
-    if (!unitNumber && !ownerName && Object.keys(row).length <= 1) return null;
-    if (unitNumber && /^(particulars|unit|flat|plot|id|no|shop|office)$/i.test(unitNumber)) return null;
+    if (!unitNumber && !ownerName && Object.keys(row).length <= 1) return null
+    if (unitNumber && /^(particulars|unit|flat|plot|id|no|shop|office)$/i.test(unitNumber))
+      return null
+
+    const rawArea = Number(
+      String(
+        getValue([
+          'area',
+          'sqft',
+          'area_sqft',
+          'area sqft',
+          'plot area sqft',
+          'sq.ft',
+          'sq-ft',
+          'builtup',
+          'built up'
+        ]) || '0'
+      ).replace(/[^0-9.]/g, '')
+    )
 
     return {
+      ...row,
       previewId,
-      project_id: effectiveProjectId,
+      project_id: effectiveProjectId || 0,
       unit_number: unitNumber,
-      wing: String(getValue(['wing', 'block', 'a', 'sector', 'wing/block', 'bldg', 'building']) || '').trim() || (unitNumber.match(/^[A-Z]/i)?.[0] || ''),
-      unit_type: String(getValue(['type', 'unit type', 'category', 'usage']) || 'Residential').trim(),
-      area_sqft: Number(String(getValue(['area', 'sqft', 'area_sqft', 'area sqft', 'plot area sqft', 'sq.ft', 'sq-ft', 'builtup', 'built up']) || '0').replace(/[^0-9.]/g, '')),
+      wing:
+        String(
+          getValue(['wing', 'block', 'a', 'sector', 'wing/block', 'bldg', 'building']) || ''
+        ).trim() ||
+        unitNumber.match(/^[A-Z]/i)?.[0] ||
+        '',
+      unit_type: String(
+        getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
+          (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Residential')
+      ).trim(),
+      area_sqft: rawArea || defaultArea,
       owner_name: ownerName || '',
-      contact_number: String(getValue(['contact', 'phone', 'mobile', 'contact number', 'contact_no', 'mob.', 'mobile no', 'tel', 'phone no']) || '').trim(),
-      email: String(getValue(['email', 'mail', 'email id', 'email_id', 'e-mail']) || '').trim(),
-      status: String(getValue(['status', 'occupancy']) || 'Occupied').trim(),
-    };
-  };
+      status: String(getValue(['status', 'occupancy']) || 'Occupied').trim()
+    }
+  }
 
   useEffect(() => {
     if (importData.length > 0) {
-      const preview = importData.map((row, index) => {
-        // Assign internal ID if not present
-        if (!row.__id) row.__id = `row-${index}`;
-        return mapRowToUnit(row, importProjectId);
-      }).filter(u => u !== null);
-      setMappedPreview(preview);
+      const preview = importData
+        .map((row, index) => {
+          // Assign internal ID if not present
+          if (!row.__id) row.__id = `row-${index}`
+          return mapRowToUnit(row, importProjectId)
+        })
+        .filter((u): u is ImportUnitPreview => u !== null)
+      setMappedPreview(preview)
     } else {
-      setMappedPreview([]);
+      setMappedPreview([])
     }
-  }, [importData, importProjectId]);
+  }, [importData, importProjectId, projects, ignoreEmptyUnits, defaultArea])
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (): Promise<void> => {
+    setLoading(true)
     try {
       const [unitsData, projectsData] = await Promise.all([
         window.api.units.getAll(),
-        window.api.projects.getAll(),
-      ]);
-      setUnits(unitsData);
-      setFilteredUnits(unitsData);
-      setProjects(projectsData);
-      setSelectedRowKeys([]);
+        window.api.projects.getAll()
+      ])
+      setUnits(unitsData)
+      setFilteredUnits(unitsData)
+      setProjects(projectsData)
+      setSelectedRowKeys([])
     } catch (error) {
-      message.error('Failed to fetch data');
+      message.error('Failed to fetch data')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData()
+  }, [])
 
   useEffect(() => {
-    const filtered = units.filter(unit => {
-      const matchSearch = unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
-                         unit.owner_name.toLowerCase().includes(searchText.toLowerCase());
-      const matchProject = !selectedProject || unit.project_id === selectedProject;
-      const matchWing = !selectedWing || unit.wing === selectedWing;
-      return matchSearch && matchProject && matchWing;
-    });
-    setFilteredUnits(filtered);
-  }, [searchText, selectedProject, selectedWing, units]);
+    const filtered = units.filter((unit) => {
+      const matchSearch =
+        unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
+        unit.owner_name.toLowerCase().includes(searchText.toLowerCase())
+      const matchProject = !selectedProject || unit.project_id === selectedProject
+      const matchWing = !selectedWing || unit.wing === selectedWing
+      const matchType = !selectedUnitType || unit.unit_type === selectedUnitType
+      const matchOccupancy = !selectedOccupancy || unit.status === selectedOccupancy
+      const matchMinArea = areaRange[0] === null || unit.area_sqft >= areaRange[0]
+      const matchMaxArea = areaRange[1] === null || unit.area_sqft <= areaRange[1]
+      
+      return matchSearch && matchProject && matchWing && matchType && matchOccupancy && matchMinArea && matchMaxArea
+    })
+    setFilteredUnits(filtered)
+  }, [searchText, selectedProject, selectedWing, selectedUnitType, selectedOccupancy, areaRange, units])
 
-  const wings = Array.from(new Set(units.map(u => u.wing).filter(Boolean))).sort() as string[];
+  const wings = Array.from(new Set(units.map((u) => u.wing).filter(Boolean))).sort() as string[]
 
-  const handleAdd = () => {
-    setEditingUnit(null);
-    form.resetFields();
-    setIsModalOpen(true);
-  };
+  const handleAdd = (): void => {
+    setEditingUnit(null)
+    form.resetFields()
+    setIsModalOpen(true)
+  }
 
-  const handleEdit = (record: Unit) => {
-    setEditingUnit(record);
-    form.setFieldsValue(record);
-    setIsModalOpen(true);
-  };
+  const handleEdit = (record: Unit): void => {
+    setEditingUnit(record)
+    form.setFieldsValue(record)
+    setIsModalOpen(true)
+  }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number): Promise<void> => {
     Modal.confirm({
       title: 'Are you sure?',
       onOk: async () => {
-        await window.api.units.delete(id);
-        message.success('Unit deleted');
-        fetchData();
-      },
-    });
-  };
+        await window.api.units.delete(id)
+        message.success('Unit deleted')
+        fetchData()
+      }
+    })
+  }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = async (): Promise<void> => {
     Modal.confirm({
       title: `Are you sure you want to delete ${selectedRowKeys.length} units?`,
       content: 'This action cannot be undone.',
@@ -211,163 +292,239 @@ const Units: React.FC = () => {
       okType: 'danger',
       cancelText: 'No',
       onOk: async () => {
-        setLoading(true);
+        setLoading(true)
         try {
-          await window.api.units.bulkDelete(selectedRowKeys as number[]);
-          message.success(`Successfully deleted ${selectedRowKeys.length} units`);
-          fetchData();
+          await window.api.units.bulkDelete(selectedRowKeys as number[])
+          message.success(`Successfully deleted ${selectedRowKeys.length} units`)
+          fetchData()
         } catch (error) {
-          message.error('Failed to delete units');
+          message.error('Failed to delete units')
         } finally {
-          setLoading(false);
+          setLoading(false)
         }
-      },
-    });
-  };
+      }
+    })
+  }
 
-  const handleModalOk = async () => {
-    const values = await form.validateFields();
+  const handleModalOk = async (): Promise<void> => {
+    const values = await form.validateFields()
     if (editingUnit?.id) {
-      await window.api.units.update(editingUnit.id, values);
+      await window.api.units.update(editingUnit.id, values)
     } else {
-      await window.api.units.create(values);
+      await window.api.units.create(values)
     }
-    setIsModalOpen(false);
-    fetchData();
-  };
+    setIsModalOpen(false)
+    fetchData()
+  }
 
-  const handleImport = async (file: File) => {
+  const handleImport = async (file: File): Promise<boolean> => {
     // Pre-select project if one is already filtered in the main view
     if (selectedProject) {
-      setImportProjectId(selectedProject);
+      setImportProjectId(selectedProject)
     }
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const data = e.target?.result;
-      const workbook = XLSX.read(data, { type: 'binary' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet);
-      
+    const reader = new FileReader()
+    reader.onload = async (e): Promise<void> => {
+      const data = e.target?.result
+      const workbook = XLSX.read(data, { type: 'binary' })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[]
+
       if (jsonData.length === 0) {
-        message.warning('No data found in the Excel file');
-        return;
+        message.warning('No data found in the Excel file')
+        return
       }
 
-      setImportData(jsonData);
-      setIsImportModalOpen(true);
-    };
-    reader.readAsBinaryString(file);
-    return false;
-  };
+      setImportData(jsonData)
+      setIsImportModalOpen(true)
+    }
+    reader.readAsBinaryString(file)
+    return false
+  }
 
-  const handleImportOk = async () => {
+  const handleImportOk = async (): Promise<void> => {
     if (!importProjectId) {
-      message.error('Please select a project for import');
-      return;
+      message.error('Please select a project for import')
+      return
     }
 
-    // Validation check for mandatory fields in the preview
-    const invalidUnits = mappedPreview.filter(u => !u.unit_number || !u.owner_name);
-    if (invalidUnits.length > 0) {
-      message.error(`${invalidUnits.length} units are missing Unit Number or Owner Name. Please fill them in the preview table.`);
-      return;
-    }
-
-    setLoading(true);
+    setLoading(true)
     try {
-      await window.api.units.bulkCreate(mappedPreview as Unit[]);
-      message.success(`Successfully imported ${mappedPreview.length} units`);
-      setIsImportModalOpen(false);
-      setImportData([]);
-      setMappedPreview([]);
-      setImportProjectId(null);
-      fetchData();
-    } catch (error) {
-      console.error(error);
-      message.error('Failed to import units');
-    } finally {
-      setLoading(false);
-    }
-  };
+      // Process mappedPreview into a format the backend can use to "explode" rows
+      // We need to identify which columns are years and which are add-ons
+      const rowsToImport = mappedPreview.map((row) => {
+        const years: {
+          financial_year: string
+          base_amount: number
+          arrears: number
+          add_ons: { name: string; amount: number }[]
+        }[] = []
 
-  const handlePreviewCellChange = (previewId: string, field: string, value: any) => {
-    setMappedPreview(prev => prev.map(u => {
-      if (u.previewId === previewId) {
-        return { ...u, [field]: value };
-      }
-      return u;
-    }));
-  };
+        // Find all keys that look like financial years (e.g., "2018-19")
+        const yearKeys = Object.keys(row).filter((key) => /^\d{4}-\d{2}$/.test(key))
+
+        for (const year of yearKeys) {
+          const baseAmount = Number(row[year]) || 0
+          const addons: { name: string; amount: number }[] = []
+          let arrears = 0
+
+          // Check for Arrears column - can be "Arrears", "O/S", "Balance"
+          const arrearsValue = row['Arrears'] || row['O/S'] || row['Balance'] || row['Outstanding']
+          if (arrearsValue !== undefined) {
+            arrears = Number(arrearsValue) || 0
+          }
+
+          // Check for Penalty, NA Tax, Cable, etc. associated with this row/context
+          // In the wide format, we might have multiple penalty columns.
+          // For now, let's look for common addon names in the row
+          const possibleAddons = [
+            { key: 'Penalty', name: 'Penalty' },
+            { key: 'NA Tax', name: 'NA Tax' },
+            { key: 'N.A Tax', name: 'NA Tax' },
+            { key: 'Cable', name: 'Cable' },
+            { key: 'Rd & NA', name: 'Road & NA Charges' },
+            { key: 'Water', name: 'Water Charges' },
+            { key: 'Interest', name: 'Interest' }
+          ]
+
+          for (const addon of possibleAddons) {
+            if (row[addon.key] !== undefined && Number(row[addon.key]) > 0) {
+              addons.push({ name: addon.name, amount: Number(row[addon.key]) })
+            }
+          }
+
+          years.push({
+            financial_year: year,
+            base_amount: baseAmount,
+            arrears: arrears,
+            add_ons: addons
+          })
+        }
+
+        return {
+          unit_number: row.unit_number,
+          owner_name: row.owner_name,
+          unit_type: row.unit_type,
+          wing: row.wing,
+          area_sqft: row.area_sqft,
+          years: years
+        }
+      })
+
+      console.log('Sending ledger to importLedger:', rowsToImport)
+      await window.api.units.importLedger({
+        projectId: Number(importProjectId),
+        rows: rowsToImport
+      })
+
+      message.success(`Successfully imported ${rowsToImport.length} unit records and their history`)
+      setIsImportModalOpen(false)
+      setImportData([])
+      setMappedPreview([])
+      setImportProjectId(null)
+      fetchData()
+    } catch (error: unknown) {
+      console.error('Import failed:', error)
+      const messageText = error instanceof Error ? error.message : 'Check console for details'
+      message.error(`Failed to import ledger: ${messageText}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePreviewCellChange = (previewId: string, field: string, value: unknown): void => {
+    setMappedPreview((prev) =>
+      prev.map((u) => {
+        if (u.previewId === previewId) {
+          return { ...u, [field]: value }
+        }
+        return u
+      })
+    )
+  }
 
   const columns = [
-    { 
-      title: 'Project', 
-      dataIndex: 'project_name', 
+    {
+      title: 'Project',
+      dataIndex: 'project_name',
       key: 'project_name',
       fixed: 'left' as const,
-      sorter: (a: Unit, b: Unit) => (a.project_name || '').localeCompare(b.project_name || ''),
+      sorter: (a: Unit, b: Unit) => (a.project_name || '').localeCompare(b.project_name || '')
     },
-    { 
-      title: 'Unit No', 
-      dataIndex: 'unit_number', 
+    {
+      title: 'Unit No',
+      dataIndex: 'unit_number',
       key: 'unit_number',
-      sorter: (a: Unit, b: Unit) => a.unit_number.localeCompare(b.unit_number),
+      sorter: (a: Unit, b: Unit) => a.unit_number.localeCompare(b.unit_number)
     },
-    { 
-      title: 'Wing', 
-      dataIndex: 'wing', 
+    {
+      title: 'Wing',
+      dataIndex: 'wing',
       key: 'wing',
-      sorter: (a: Unit, b: Unit) => (a.wing || '').localeCompare(b.wing || ''),
+      sorter: (a: Unit, b: Unit) => (a.wing || '').localeCompare(b.wing || '')
     },
     {
       title: 'Type',
       dataIndex: 'unit_type',
       key: 'unit_type',
-      sorter: (a: Unit, b: Unit) => (a.unit_type || '').localeCompare(b.unit_type || ''),
+      sorter: (a: Unit, b: Unit) => (a.unit_type || '').localeCompare(b.unit_type || '')
     },
-    { 
-      title: 'Owner', 
-      dataIndex: 'owner_name', 
+    {
+      title: 'Owner',
+      dataIndex: 'owner_name',
       key: 'owner_name',
-      sorter: (a: Unit, b: Unit) => a.owner_name.localeCompare(b.owner_name),
+      sorter: (a: Unit, b: Unit) => a.owner_name.localeCompare(b.owner_name)
     },
-    { 
-      title: 'Area (sqft)', 
-      dataIndex: 'area_sqft', 
+    {
+      title: 'Area (sqft)',
+      dataIndex: 'area_sqft',
       key: 'area_sqft',
       align: 'right' as const,
-      sorter: (a: Unit, b: Unit) => a.area_sqft - b.area_sqft,
+      sorter: (a: Unit, b: Unit) => a.area_sqft - b.area_sqft
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      sorter: (a: Unit, b: Unit) => (a.status || '').localeCompare(b.status || ''),
+      sorter: (a: Unit, b: Unit) => (a.status || '').localeCompare(b.status || '')
     },
     {
       title: 'Actions',
       key: 'actions',
       align: 'right' as const,
-      render: (_: any, record: Unit) => (
+      render: (_: unknown, record: Unit) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id!)} />
+          <Button
+            size="small"
+            icon={<DeleteOutlined />}
+            danger
+            onClick={() => handleDelete(record.id!)}
+          />
         </Space>
-      ),
-    },
-  ];
+      )
+    }
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: '16px' }}>
-        <Title level={2} style={{ margin: 0 }}>Units</Title>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+          flexWrap: 'wrap',
+          gap: '16px'
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>
+          Units
+        </Title>
         <Space wrap>
           <Upload beforeUpload={handleImport} showUploadList={false}>
-            <Button icon={<UploadOutlined />}>
-              Import Excel
-            </Button>
+            <Button icon={<UploadOutlined />}>Import Excel</Button>
           </Upload>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             Add Unit
@@ -383,48 +540,90 @@ const Units: React.FC = () => {
               allowClear
               onSearch={setSearchText}
               onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 300 }}
+              style={{ width: 250 }}
               enterButton
               suffix={null}
             />
-            <Select 
-              placeholder="Project" 
-              style={{ width: 200 }} 
+            <Select
+              placeholder="Project"
+              style={{ width: 180 }}
               allowClear
               onChange={setSelectedProject}
               value={selectedProject}
             >
-              {projects.map(s => <Option key={s.id} value={s.id}>{s.name}</Option>)}
+              {projects.map((s) => (
+                <Option key={s.id} value={s.id}>
+                  {s.name}
+                </Option>
+              ))}
             </Select>
-            <Select 
-              placeholder="Wing" 
-              style={{ width: 150 }} 
+            <Select
+              placeholder="Wing"
+              style={{ width: 120 }}
               allowClear
               onChange={setSelectedWing}
               value={selectedWing}
             >
-              {wings.map(wing => <Option key={wing} value={wing}>{wing}</Option>)}
+              {wings.map((wing) => (
+                <Option key={wing} value={wing}>
+                  {wing}
+                </Option>
+              ))}
             </Select>
+            <Select
+              placeholder="Unit Type"
+              style={{ width: 140 }}
+              allowClear
+              onChange={setSelectedUnitType}
+              value={selectedUnitType}
+            >
+              <Option value="Residential">Residential</Option>
+              <Option value="Commercial">Commercial</Option>
+              <Option value="Plot">Plot</Option>
+              <Option value="Bungalow">Bungalow</Option>
+              <Option value="Flat">Flat</Option>
+            </Select>
+            <Select
+              placeholder="Occupancy"
+              style={{ width: 130 }}
+              allowClear
+              onChange={setSelectedOccupancy}
+              value={selectedOccupancy}
+            >
+              <Option value="Occupied">Occupied</Option>
+              <Option value="Vacant">Vacant</Option>
+            </Select>
+            <Space>
+              <InputNumber
+                placeholder="Min Area"
+                style={{ width: 100 }}
+                value={areaRange[0]}
+                onChange={(val) => setAreaRange([val, areaRange[1]])}
+              />
+              <span>-</span>
+              <InputNumber
+                placeholder="Max Area"
+                style={{ width: 100 }}
+                value={areaRange[1]}
+                onChange={(val) => setAreaRange([areaRange[0], val])}
+              />
+            </Space>
             {selectedRowKeys.length > 0 && (
-              <Button 
-                danger 
-                icon={<DeleteOutlined />} 
-                onClick={handleBulkDelete}
-              >
+              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
                 Delete Selected ({selectedRowKeys.length})
               </Button>
             )}
           </Space>
         </div>
 
-        <Table 
+        <Table
           rowSelection={{
             selectedRowKeys,
-            onChange: (keys) => setSelectedRowKeys(keys),
+            onChange: (keys) => setSelectedRowKeys(keys)
           }}
-          columns={columns} 
-          dataSource={filteredUnits} 
-          rowKey="id" 
+          columns={columns}
+          dataSource={filteredUnits}
+          rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
           scroll={{ x: 'max-content' }}
@@ -436,33 +635,70 @@ const Units: React.FC = () => {
         open={isImportModalOpen}
         onOk={handleImportOk}
         onCancel={() => {
-          setIsImportModalOpen(false);
-          setImportData([]);
-          setMappedPreview([]);
+          setIsImportModalOpen(false)
+          setImportData([])
+          setMappedPreview([])
         }}
         width={800}
         confirmLoading={loading}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
-          <Alert 
-            message="Autofill Preview" 
-            description="The system is automatically identifying columns from your Excel. Check the table below to see if the data is being correctly extracted." 
-            type="info" 
-            showIcon 
+          <Alert
+            message="Autofill Preview"
+            description="The system is automatically identifying columns from your Excel. Check the table below to see if the data is being correctly extracted."
+            type="info"
+            showIcon
           />
-          
-          <div>
-            <Typography.Text strong>Step 1: Select Project</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 8 }}
-              placeholder="Select Project"
-              value={importProjectId}
-              onChange={setImportProjectId}
-            >
-              {projects.map(s => (
-                <Select.Option key={s.id} value={s.id}>{s.name}</Select.Option>
-              ))}
-            </Select>
+
+          {projects.length === 0 && (
+            <Alert
+              message="No Projects Found"
+              description="You must create a project before you can import units. Please go to the Projects page first."
+              type="warning"
+              showIcon
+            />
+          )}
+
+          <div style={{ marginBottom: 16 }}>
+            <Space size="large" align="end" wrap>
+              <div>
+                <Typography.Text strong>Step 1: Import to Project</Typography.Text>
+                <Select
+                  placeholder="Select Project"
+                  style={{ width: 250, display: 'block', marginTop: 8 }}
+                  status={!importProjectId ? 'error' : undefined}
+                  value={importProjectId}
+                  onChange={setImportProjectId}
+                  allowClear
+                >
+                  {projects.map((p) => (
+                    <Option key={p.id} value={p.id}>
+                      {p.name}
+                    </Option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Typography.Text strong>Empty Units</Typography.Text>
+                <Select
+                  value={ignoreEmptyUnits ? 'ignore' : 'keep'}
+                  onChange={(val) => setIgnoreEmptyUnits(val === 'ignore')}
+                  style={{ width: 150, display: 'block', marginTop: 8 }}
+                >
+                  <Option value="ignore">Ignore Empty</Option>
+                  <Option value="keep">Keep Empty</Option>
+                </Select>
+              </div>
+              <div>
+                <Typography.Text strong>Default Area</Typography.Text>
+                <InputNumber
+                  placeholder="Default Area"
+                  value={defaultArea}
+                  onChange={(val) => setDefaultArea(val || 0)}
+                  style={{ width: 120, display: 'block', marginTop: 8 }}
+                />
+              </div>
+            </Space>
           </div>
 
           {mappedPreview.length > 0 && (
@@ -471,49 +707,68 @@ const Units: React.FC = () => {
               <Typography.Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                 Double-click on any cell to edit. Red borders indicate missing required fields.
               </Typography.Paragraph>
-              <Table 
-                size="small" 
-                pagination={{ pageSize: 5 }} 
-                dataSource={mappedPreview} 
+              <Table
+                size="small"
+                pagination={{ pageSize: 5 }}
+                dataSource={mappedPreview}
                 rowKey="previewId"
                 columns={[
-                  { 
-                    title: 'Unit No', 
-                    dataIndex: 'unit_number', 
+                  {
+                    title: 'Project',
+                    key: 'project',
+                    width: 150,
+                    render: () => {
+                      const project = projects.find((p) => p.id === Number(importProjectId))
+                      return project ? (
+                        project.name
+                      ) : (
+                        <Typography.Text type="danger">Not Selected</Typography.Text>
+                      )
+                    }
+                  },
+                  {
+                    title: 'Unit No',
+                    dataIndex: 'unit_number',
                     key: 'unit_number',
-                    render: (text: string, record: any) => (
-                      <Input 
+                    render: (text: string, record: ImportUnitPreview) => (
+                      <Input
                         size="small"
                         status={!text ? 'error' : undefined}
-                        value={text} 
-                        onChange={(e) => handlePreviewCellChange(record.previewId, 'unit_number', e.target.value)}
+                        value={text}
+                        onChange={(e) =>
+                          handlePreviewCellChange(record.previewId, 'unit_number', e.target.value)
+                        }
                         placeholder="Required"
                       />
                     )
                   },
-                  { 
-                    title: 'Owner Name', 
-                    dataIndex: 'owner_name', 
+                  {
+                    title: 'Owner Name',
+                    dataIndex: 'owner_name',
                     key: 'owner_name',
-                    render: (text: string, record: any) => (
-                      <Input 
+                    render: (text: string, record: ImportUnitPreview) => (
+                      <Input
                         size="small"
                         status={!text ? 'error' : undefined}
-                        value={text} 
-                        onChange={(e) => handlePreviewCellChange(record.previewId, 'owner_name', e.target.value)}
+                        value={text}
+                        onChange={(e) =>
+                          handlePreviewCellChange(record.previewId, 'owner_name', e.target.value)
+                        }
                         placeholder="Required"
                       />
                     )
                   },
-                  { 
-                    title: 'Type', 
-                    dataIndex: 'unit_type', 
+                  {
+                    title: 'Type',
+                    dataIndex: 'unit_type',
                     key: 'unit_type',
-                    render: (text: string, record: any) => (
+                    render: (text: string, record: ImportUnitPreview) => (
                       <Select
                         size="small"
                         value={text}
-                        onChange={(val) => handlePreviewCellChange(record.previewId, 'unit_type', val)}
+                        onChange={(val) =>
+                          handlePreviewCellChange(record.previewId, 'unit_type', val)
+                        }
                         style={{ width: '100%' }}
                       >
                         <Option value="Residential">Residential</Option>
@@ -522,37 +777,41 @@ const Units: React.FC = () => {
                       </Select>
                     )
                   },
-                  { 
-                    title: 'Wing', 
-                    dataIndex: 'wing', 
+                  {
+                    title: 'Wing',
+                    dataIndex: 'wing',
                     key: 'wing',
-                    render: (text: string, record: any) => (
-                      <Input 
+                    render: (text: string, record: ImportUnitPreview) => (
+                      <Input
                         size="small"
-                        value={text} 
-                        onChange={(e) => handlePreviewCellChange(record.previewId, 'wing', e.target.value)}
+                        value={text}
+                        onChange={(e) =>
+                          handlePreviewCellChange(record.previewId, 'wing', e.target.value)
+                        }
                       />
                     )
                   },
-                  { 
-                    title: 'Area', 
-                    dataIndex: 'area_sqft', 
+                  {
+                    title: 'Area',
+                    dataIndex: 'area_sqft',
                     key: 'area_sqft',
                     width: 100,
-                    render: (text: number, record: any) => (
-                      <InputNumber 
+                    render: (text: number, record: ImportUnitPreview) => (
+                      <InputNumber
                         size="small"
-                        value={text} 
-                        onChange={(val) => handlePreviewCellChange(record.previewId, 'area_sqft', val)}
+                        value={text}
+                        onChange={(val) =>
+                          handlePreviewCellChange(record.previewId, 'area_sqft', val)
+                        }
                         style={{ width: '100%' }}
                       />
                     )
                   },
-                  { 
-                    title: 'Status', 
-                    dataIndex: 'status', 
+                  {
+                    title: 'Status',
+                    dataIndex: 'status',
                     key: 'status',
-                    render: (text: string, record: any) => (
+                    render: (text: string, record: ImportUnitPreview) => (
                       <Select
                         size="small"
                         value={text}
@@ -564,31 +823,37 @@ const Units: React.FC = () => {
                       </Select>
                     )
                   },
-                  { 
-                    title: 'Contact', 
-                    dataIndex: 'contact_number', 
+                  {
+                    title: 'Contact',
+                    dataIndex: 'contact_number',
                     key: 'contact_number',
-                    render: (text: string, record: any) => (
-                      <Input 
+                    render: (text: string, record: ImportUnitPreview) => (
+                      <Input
                         size="small"
-                        value={text} 
-                        onChange={(e) => handlePreviewCellChange(record.previewId, 'contact_number', e.target.value)}
+                        value={text}
+                        onChange={(e) =>
+                          handlePreviewCellChange(
+                            record.previewId,
+                            'contact_number',
+                            e.target.value
+                          )
+                        }
                       />
                     )
-                  },
+                  }
                 ]}
                 scroll={{ x: true }}
                 style={{ marginTop: 8 }}
               />
             </div>
           )}
-          
+
           {importData.length > 0 && mappedPreview.length === 0 && (
-            <Alert 
-              message="No units recognized" 
-              description="Could not find any unit numbers in the uploaded file. Please make sure your Excel has a column for Unit Number or Flat Number." 
-              type="warning" 
-              showIcon 
+            <Alert
+              message="No units recognized"
+              description="Could not find any unit numbers in the uploaded file. Please make sure your Excel has a column for Unit Number or Flat Number."
+              type="warning"
+              showIcon
             />
           )}
         </Space>
@@ -601,17 +866,26 @@ const Units: React.FC = () => {
         onCancel={() => setIsModalOpen(false)}
         width={600}
       >
-        <Form 
-          form={form} 
+        <Form
+          form={form}
           layout="vertical"
           initialValues={{ unit_type: 'Residential', status: 'Occupied' }}
         >
-          <Divider orientation={"left" as any} style={{ marginTop: 0 }}>Unit Information</Divider>
+          <Divider orientation={"left" as any} plain style={{ marginTop: 0 }}>
+            Unit Information
+          </Divider>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <Form.Item name="project_id" label="Project" rules={[{ required: true }]} style={{ gridColumn: 'span 2' }}>
+            <Form.Item
+              name="project_id"
+              label="Project"
+              rules={[{ required: true }]}
+              style={{ gridColumn: 'span 2' }}
+            >
               <Select>
                 {projects.map((s) => (
-                  <Select.Option key={s.id} value={s.id}>{s.name}</Select.Option>
+                  <Select.Option key={s.id} value={s.id}>
+                    {s.name}
+                  </Select.Option>
                 ))}
               </Select>
             </Form.Item>
@@ -654,7 +928,7 @@ const Units: React.FC = () => {
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default Units;
+export default Units

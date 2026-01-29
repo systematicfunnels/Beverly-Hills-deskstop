@@ -2,6 +2,8 @@ export const schema = `
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  location TEXT, -- Aligned with ER
+  total_units INTEGER, -- Aligned with ER
   address TEXT,
   city TEXT,
   state TEXT,
@@ -34,6 +36,7 @@ CREATE TABLE IF NOT EXISTS maintenance_rates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
   financial_year TEXT NOT NULL, -- e.g. 2024-25
+  unit_type TEXT DEFAULT 'Flat', -- Aligned with ER
   rate_per_sqft REAL NOT NULL,
   billing_frequency TEXT DEFAULT 'YEARLY',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -54,22 +57,26 @@ CREATE TABLE IF NOT EXISTS maintenance_letters (
   project_id INTEGER NOT NULL,
   unit_id INTEGER NOT NULL,
   financial_year TEXT NOT NULL,
-  base_amount REAL NOT NULL,
+  base_amount REAL NOT NULL, -- Maps to maintenance_charge
+  arrears REAL DEFAULT 0, -- Aligned with ER
   discount_amount REAL DEFAULT 0,
   final_amount REAL NOT NULL,
+  is_paid BOOLEAN DEFAULT 0, -- Aligned with ER
+  is_sent BOOLEAN DEFAULT 0, -- Aligned with ER
   due_date DATE,
   status TEXT DEFAULT 'Generated', -- Generated, Modified
   pdf_path TEXT,
   generated_date DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE CASCADE
+  FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE CASCADE,
+  UNIQUE(unit_id, financial_year) -- Enforce 1 row = 1 unit + 1 year
 );
 
 CREATE TABLE IF NOT EXISTS add_ons (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   letter_id INTEGER NOT NULL,
-  addon_name TEXT NOT NULL,
-  addon_amount REAL NOT NULL,
+  addon_name TEXT NOT NULL, -- Maps to name
+  addon_amount REAL NOT NULL, -- Maps to amount
   remarks TEXT,
   FOREIGN KEY (letter_id) REFERENCES maintenance_letters(id) ON DELETE CASCADE
 );
@@ -81,7 +88,9 @@ CREATE TABLE IF NOT EXISTS payments (
   letter_id INTEGER,
   payment_date DATE NOT NULL,
   payment_amount REAL NOT NULL,
+  financial_year TEXT, -- Attribution for reports (nullable)
   payment_mode TEXT NOT NULL, -- Cash, Cheque, UPI
+  reference_number TEXT, -- Aligned with ER
   cheque_number TEXT,
   remarks TEXT,
   payment_status TEXT DEFAULT 'Received', -- Received, Pending
@@ -113,4 +122,4 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
-`;
+`
