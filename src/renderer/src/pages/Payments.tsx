@@ -13,7 +13,8 @@ import {
   Tag,
   Typography,
   Divider,
-  Card
+  Card,
+  DividerProps
 } from 'antd'
 import { PlusOutlined, DeleteOutlined, PrinterOutlined, TableOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -22,6 +23,16 @@ import { Project, Unit, Payment, MaintenanceLetter } from '@preload/types'
 const { Title, Text } = Typography
 const { Option } = Select
 const { Search } = Input
+
+interface BulkPaymentEntry {
+  unit_id: number
+  project_id: number
+  unit_number: string
+  owner_name: string
+  payment_amount: number
+  payment_mode: string
+  payment_date: dayjs.Dayjs
+}
 
 const Payments: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([])
@@ -33,13 +44,18 @@ const Payments: React.FC = () => {
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
   const [selectedMode, setSelectedMode] = useState<string | null>(null)
-  
+
+  // Default to current financial year
+  const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
+  const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
+  const [selectedFY, setSelectedFY] = useState<string | null>(defaultFY)
+
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [searchText, setSearchText] = useState('')
   const [form] = Form.useForm()
   const [bulkForm] = Form.useForm()
 
-  const [bulkPayments, setBulkPayments] = useState<any[]>([])
+  const [bulkPayments, setBulkPayments] = useState<BulkPaymentEntry[]>([])
   const [bulkProject, setBulkProject] = useState<number | null>(null)
 
   const fetchData = async (): Promise<void> => {
@@ -56,7 +72,7 @@ const Payments: React.FC = () => {
       setLetters(lettersData)
       setProjects(projectsData)
       setSelectedRowKeys([])
-    } catch (error) {
+    } catch {
       message.error('Failed to fetch data')
     } finally {
       setLoading(false)
@@ -123,8 +139,8 @@ const Payments: React.FC = () => {
       message.success(`Successfully recorded ${validPayments.length} payments`)
       setIsBulkModalOpen(false)
       fetchData()
-    } catch (error) {
-      console.error(error)
+    } catch {
+      // console.error(error)
       message.error('Failed to record bulk payments')
     } finally {
       setLoading(false)
@@ -162,8 +178,8 @@ const Payments: React.FC = () => {
       message.success('Payment recorded successfully')
       setIsModalOpen(false)
       fetchData()
-    } catch (error) {
-      console.error(error)
+    } catch {
+      // console.error(error)
       message.error('Failed to record payment')
     } finally {
       setLoading(false)
@@ -188,13 +204,13 @@ const Payments: React.FC = () => {
       okText: 'Yes, Delete',
       okType: 'danger',
       cancelText: 'No',
-      onOk: async () => {
+      onOk: async (): Promise<void> => {
         setLoading(true)
         try {
           await window.api.payments.bulkDelete(selectedRowKeys as number[])
           message.success(`Successfully deleted ${selectedRowKeys.length} payments`)
           fetchData()
-        } catch (error) {
+        } catch {
           message.error('Failed to delete payments')
         } finally {
           setLoading(false)
@@ -203,13 +219,13 @@ const Payments: React.FC = () => {
     })
   }
 
-  const handlePrintReceipt = async (id: number) => {
+  const handlePrintReceipt = async (id: number): Promise<void> => {
     try {
       setLoading(true)
       const pdfPath = await window.api.payments.generateReceiptPdf(id)
       await window.api.shell.showItemInFolder(pdfPath)
-    } catch (error) {
-      console.error(error)
+    } catch {
+      // console.error(error)
       message.error('Failed to generate receipt')
     } finally {
       setLoading(false)
@@ -236,7 +252,7 @@ const Payments: React.FC = () => {
       dataIndex: 'payment_amount',
       key: 'payment_amount',
       align: 'right' as const,
-      render: (val: number) => <strong>₹${val.toLocaleString()}</strong>,
+      render: (val: number) => <strong>₹{val.toLocaleString()}</strong>,
       sorter: (a: Payment, b: Payment) => a.payment_amount - b.payment_amount
     },
     {
@@ -290,7 +306,8 @@ const Payments: React.FC = () => {
       !selectedProject ||
       projects.find((s) => s.id === selectedProject)?.name === payment.project_name
     const matchMode = !selectedMode || payment.payment_mode === selectedMode
-    return matchSearch && matchProject && matchMode
+    const matchFY = !selectedFY || payment.financial_year === selectedFY
+    return matchSearch && matchProject && matchMode && matchFY
   })
 
   return (
@@ -354,6 +371,27 @@ const Payments: React.FC = () => {
               <Option value="Cheque">Cheque</Option>
               <Option value="Cash">Cash</Option>
             </Select>
+            <Select
+              placeholder="Financial Year"
+              style={{ width: 150 }}
+              allowClear
+              onChange={setSelectedFY}
+              value={selectedFY}
+            >
+              {Array.from(new Set(payments.map((p) => p.financial_year).filter(Boolean)))
+                .sort()
+                .reverse()
+                .map((fy) => (
+                  <Option key={fy} value={fy}>
+                    {fy}
+                  </Option>
+                ))}
+              {!payments.some((p) => p.financial_year === defaultFY) && (
+                <Option key={defaultFY} value={defaultFY}>
+                  {defaultFY}
+                </Option>
+              )}
+            </Select>
             {selectedRowKeys.length > 0 && (
               <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
                 Delete Selected ({selectedRowKeys.length})
@@ -389,7 +427,7 @@ const Payments: React.FC = () => {
           layout="vertical"
           initialValues={{ payment_date: dayjs(), payment_mode: 'Transfer' }}
         >
-          <Divider orientation={"left" as any} style={{ marginTop: 0 }}>
+          <Divider orientation={'left' as DividerProps['orientation']} style={{ marginTop: 0 }}>
             Unit Details
           </Divider>
           <Form.Item name="unit_id" label="Select Unit" rules={[{ required: true }]}>
@@ -416,7 +454,7 @@ const Payments: React.FC = () => {
           <Form.Item
             noStyle
             shouldUpdate={(prevValues, currentValues) =>
-              prevValues.unit_id !== currentValues.unit_id || 
+              prevValues.unit_id !== currentValues.unit_id ||
               prevValues.letter_id !== currentValues.letter_id
             }
           >
@@ -424,8 +462,8 @@ const Payments: React.FC = () => {
               const unitId = getFieldValue('unit_id')
               const letterId = getFieldValue('letter_id')
               const unitLetters = letters.filter((l) => l.unit_id === unitId)
-              const selectedLetter = unitLetters.find(l => l.id === letterId)
-              
+              const selectedLetter = unitLetters.find((l) => l.id === letterId)
+
               return (
                 <>
                   <Form.Item
@@ -441,7 +479,7 @@ const Payments: React.FC = () => {
                       disabled={unitLetters.length === 0}
                       onChange={(val) => {
                         if (val) {
-                          const letter = unitLetters.find(l => l.id === val)
+                          const letter = unitLetters.find((l) => l.id === val)
                           if (letter) form.setFieldsValue({ financial_year: letter.financial_year })
                         }
                       }}
@@ -454,19 +492,21 @@ const Payments: React.FC = () => {
                     </Select>
                   </Form.Item>
 
-                  <Form.Item 
-                    name="financial_year" 
-                    label="Against Financial Year" 
+                  <Form.Item
+                    name="financial_year"
+                    label="Against Financial Year"
                     rules={[{ required: true, message: 'Please select a financial year' }]}
                   >
-                    <Select 
-                      placeholder="Select Financial Year"
-                      disabled={!!selectedLetter}
-                    >
+                    <Select placeholder="Select Financial Year" disabled={!!selectedLetter}>
                       {/* Generate some common FY options or fetch from letters */}
-                      {Array.from(new Set(letters.map(l => l.financial_year))).sort().reverse().map(fy => (
-                        <Option key={fy} value={fy}>{fy}</Option>
-                      ))}
+                      {Array.from(new Set(letters.map((l) => l.financial_year)))
+                        .sort()
+                        .reverse()
+                        .map((fy) => (
+                          <Option key={fy} value={fy}>
+                            {fy}
+                          </Option>
+                        ))}
                       {/* Add current/next FY as options if not in letters */}
                       <Option value="2024-25">2024-25</Option>
                       <Option value="2025-26">2025-26</Option>
@@ -478,7 +518,7 @@ const Payments: React.FC = () => {
             }}
           </Form.Item>
 
-          <Divider orientation={"left" as any}>Payment Details</Divider>
+          <Divider orientation={'left' as DividerProps['orientation']}>Payment Details</Divider>
           <Form.Item name="payment_date" label="Payment Date" rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
@@ -540,9 +580,14 @@ const Payments: React.FC = () => {
               style={{ flex: 1 }}
             >
               <Select placeholder="Select Year">
-                {Array.from(new Set(letters.map(l => l.financial_year))).sort().reverse().map(fy => (
-                  <Option key={fy} value={fy}>{fy}</Option>
-                ))}
+                {Array.from(new Set(letters.map((l) => l.financial_year)))
+                  .sort()
+                  .reverse()
+                  .map((fy) => (
+                    <Option key={fy} value={fy}>
+                      {fy}
+                    </Option>
+                  ))}
                 <Option value="2024-25">2024-25</Option>
                 <Option value="2025-26">2025-26</Option>
               </Select>
@@ -577,7 +622,7 @@ const Payments: React.FC = () => {
                 title: 'Amount (₹)',
                 key: 'amount',
                 width: 150,
-                render: (_, record, index) => (
+                render: (_, record: BulkPaymentEntry, index: number) => (
                   <InputNumber
                     min={0}
                     style={{ width: '100%' }}
@@ -594,7 +639,7 @@ const Payments: React.FC = () => {
                 title: 'Mode',
                 key: 'mode',
                 width: 150,
-                render: (_, record, index) => (
+                render: (_, record: BulkPaymentEntry, index: number) => (
                   <Select
                     style={{ width: '100%' }}
                     value={record.payment_mode}

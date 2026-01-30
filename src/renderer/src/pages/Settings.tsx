@@ -1,68 +1,71 @@
-import React, { useState } from 'react';
-import { Card, Button, Typography, Space, Divider, message, Alert, Modal, List } from 'antd';
-import { DownloadOutlined, UploadOutlined, ToolOutlined } from '@ant-design/icons';
+import React, { useState } from 'react'
+import { Card, Button, Typography, Space, Divider, message, Alert, Modal, List } from 'antd'
+import { DownloadOutlined, UploadOutlined, ToolOutlined } from '@ant-design/icons'
+import { RepairResult } from '@preload/types'
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph, Text } = Typography
 
 const Settings: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [repairResults, setRepairResults] = useState<any>(null);
-  const [isRepairModalOpen, setIsRepairModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false)
+  const [repairResults, setRepairResults] = useState<RepairResult | null>(null)
+  const [isRepairModalOpen, setIsRepairModalOpen] = useState(false)
 
-  const handleExport = async () => {
+  const handleExport = async (): Promise<void> => {
     try {
       // In a real app, this would trigger a main process save dialog
-      message.info('Database export feature coming soon. Please manually backup beverly-hills.db');
-    } catch (error) {
-      message.error('Export failed');
+      message.info('Database export feature coming soon. Please manually backup beverly-hills.db')
+    } catch {
+      message.error('Export failed')
     }
-  };
+  }
 
-  const handleImport = async () => {
-    message.warning('Importing data will overwrite existing records. Please be careful.');
-  };
+  const handleImport = async (): Promise<void> => {
+    message.warning('Importing data will overwrite existing records. Please be careful.')
+  }
 
-  const handleDatabaseRepair = async () => {
-    setLoading(true);
+  const handleDatabaseRepair = async (): Promise<void> => {
+    setLoading(true)
     try {
-      // We'll add this handler to ipcHandlers.ts
-      const results = await (window.api as any).database.repair();
-      setRepairResults(results);
-      setIsRepairModalOpen(true);
+      const results = await window.api.database.repair()
+      setRepairResults(results)
+      setIsRepairModalOpen(true)
       if (results.success) {
-        message.success('Database check completed');
+        message.success('Database check completed')
       } else {
-        message.error('Database repair failed');
+        message.error('Database repair failed')
       }
-    } catch (error: any) {
-      message.error('Database repair failed: ' + error.message);
+    } catch (err: unknown) {
+      const error = err as Error
+      message.error('Database repair failed: ' + error.message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div style={{ maxWidth: 800 }}>
       <Title level={2}>System Settings</Title>
-      
+
       <Card title="Data Management" style={{ marginBottom: 24 }}>
         <Paragraph>
           Manage your local database. All data is stored locally on your machine.
         </Paragraph>
-        
+
         <Space direction="vertical" style={{ width: '100%' }}>
           <div>
             <Title level={5}>Export Database</Title>
-            <Text type="secondary">Download a copy of your database for backup or moving to another machine.</Text>
+            <Text type="secondary">
+              Download a copy of your database for backup or moving to another machine.
+            </Text>
             <div style={{ marginTop: 8 }}>
               <Button icon={<DownloadOutlined />} onClick={handleExport}>
                 Backup Database
               </Button>
             </div>
           </div>
-          
+
           <Divider />
-          
+
           <div>
             <Title level={5}>Import Data</Title>
             <Text type="secondary">Restore data from a previously exported backup file.</Text>
@@ -77,13 +80,11 @@ const Settings: React.FC = () => {
 
           <div>
             <Title level={5}>Database Tools</Title>
-            <Text type="secondary">Check for data integrity issues and repair common database errors.</Text>
+            <Text type="secondary">
+              Check for data integrity issues and repair common database errors.
+            </Text>
             <div style={{ marginTop: 8 }}>
-              <Button 
-                icon={<ToolOutlined />} 
-                onClick={handleDatabaseRepair}
-                loading={loading}
-              >
+              <Button icon={<ToolOutlined />} onClick={handleDatabaseRepair} loading={loading}>
                 Check & Repair Database
               </Button>
             </div>
@@ -114,22 +115,25 @@ const Settings: React.FC = () => {
       >
         {repairResults && (
           <div style={{ maxHeight: 400, overflow: 'auto' }}>
-            <Alert 
-              message={repairResults.success ? "Success" : "Issues Found"}
-              type={repairResults.success ? "success" : "warning"}
+            <Alert
+              message={repairResults.success ? 'Success' : 'Issues Found'}
+              type={repairResults.success ? 'success' : 'warning'}
               showIcon
               style={{ marginBottom: 16 }}
             />
-            
+
             <Title level={5}>Foreign Key Violations</Title>
             {repairResults.violations && repairResults.violations.length > 0 ? (
               <List
                 size="small"
                 bordered
                 dataSource={repairResults.violations}
-                renderItem={(item: any) => (
+                renderItem={(item) => (
                   <List.Item>
-                    <Text type="danger">Violation in table <b>{item.table}</b> at row <b>{item.rowid}</b>: Missing parent in table <b>{item.parent}</b></Text>
+                    <Text type="danger">
+                      Violation in table <b>{item.table}</b> at row <b>{item.rowid}</b>: Missing
+                      parent in table <b>{item.parent}</b>
+                    </Text>
                   </List.Item>
                 )}
               />
@@ -146,12 +150,12 @@ const Settings: React.FC = () => {
           </div>
         )}
       </Modal>
-      
+
       <div style={{ marginTop: 24, textAlign: 'center' }}>
         <Text type="secondary">Designed for property maintenance management.</Text>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Settings;
+export default Settings

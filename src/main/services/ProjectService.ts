@@ -53,13 +53,27 @@ class ProjectService {
   }
 
   public update(id: number, project: Partial<Project>): boolean {
-    const fields = Object.keys(project)
-      .filter((key) => key !== 'id' && key !== 'created_at')
-      .map((key) => `${key} = ?`)
-      .join(', ')
-    const values = Object.keys(project)
-      .filter((key) => key !== 'id' && key !== 'created_at')
-      .map((key) => project[key as keyof Project])
+    const allowedColumns = [
+      'name',
+      'address',
+      'city',
+      'state',
+      'pincode',
+      'status',
+      'letterhead_path',
+      'bank_name',
+      'account_no',
+      'ifsc_code',
+      'qr_code_path'
+    ]
+    const keys = Object.keys(project).filter(
+      (key) => allowedColumns.includes(key) && key !== 'id' && key !== 'created_at'
+    )
+
+    if (keys.length === 0) return false
+
+    const fields = keys.map((key) => `${key} = ?`).join(', ')
+    const values = keys.map((key) => project[key as keyof Project])
 
     const result = dbService.run(`UPDATE projects SET ${fields} WHERE id = ?`, [...values, id])
     return result.changes > 0
@@ -69,7 +83,7 @@ class ProjectService {
     return dbService.transaction(() => {
       try {
         console.log(`[PROJECT_SERVICE] Starting deletion for project ID: ${id}`)
-        
+
         // 1. Delete the project - let ON DELETE CASCADE handle the rest
         // Tables handled by CASCADE in schema.ts:
         // - units
@@ -79,11 +93,13 @@ class ProjectService {
         // - receipts (via payments)
         // - add_ons (via maintenance_letters)
         // - maintenance_slabs (via maintenance_rates)
-        
+
         const result = dbService.run('DELETE FROM projects WHERE id = ?', [id])
-        
+
         if (result.changes > 0) {
-          console.log(`[PROJECT_SERVICE] Successfully deleted project ${id} and all related data via cascade.`)
+          console.log(
+            `[PROJECT_SERVICE] Successfully deleted project ${id} and all related data via cascade.`
+          )
           return true
         } else {
           console.warn(`[PROJECT_SERVICE] No project found with ID ${id}.`)
@@ -108,7 +124,12 @@ class ProjectService {
     })
   }
 
-  public getDashboardStats(projectId?: number, financialYear?: string, unitType?: string, status?: string): {
+  public getDashboardStats(
+    projectId?: number,
+    financialYear?: string,
+    unitType?: string,
+    status?: string
+  ): {
     projects: number
     units: number
     pendingUnits: number
@@ -118,7 +139,7 @@ class ProjectService {
   } {
     // Project filter
     const projectWhere: string[] = []
-    const projectParams: any[] = []
+    const projectParams: (string | number)[] = []
     if (projectId) {
       projectWhere.push('id = ?')
       projectParams.push(projectId)
@@ -131,7 +152,7 @@ class ProjectService {
 
     // Unit filter
     const unitWhere: string[] = []
-    const unitParams: any[] = []
+    const unitParams: (string | number)[] = []
     if (projectId) {
       unitWhere.push('project_id = ?')
       unitParams.push(projectId)
@@ -148,7 +169,7 @@ class ProjectService {
 
     // Letter filter
     const letterWhere: string[] = []
-    const letterParams: any[] = []
+    const letterParams: (string | number)[] = []
     if (projectId) {
       letterWhere.push('project_id = ?')
       letterParams.push(projectId)
@@ -169,7 +190,7 @@ class ProjectService {
 
     // Payment filter
     const paymentWhere: string[] = []
-    const paymentParams: any[] = []
+    const paymentParams: (string | number)[] = []
     if (projectId) {
       paymentWhere.push('project_id = ?')
       paymentParams.push(projectId)
@@ -188,13 +209,29 @@ class ProjectService {
     }
     const paymentFilterStr = paymentWhere.length > 0 ? `WHERE ${paymentWhere.join(' AND ')}` : ''
 
-    const projectsCount = dbService.get<{ count: number }>(`SELECT COUNT(*) as count FROM projects ${projectFilterStr}`, projectParams)?.count || 0
+    const projectsCount =
+      dbService.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM projects ${projectFilterStr}`,
+        projectParams
+      )?.count || 0
 
-    const unitsCount = dbService.get<{ count: number }>(`SELECT COUNT(*) as count FROM units ${unitFilterStr}`, unitParams)?.count || 0
+    const unitsCount =
+      dbService.get<{ count: number }>(
+        `SELECT COUNT(*) as count FROM units ${unitFilterStr}`,
+        unitParams
+      )?.count || 0
 
-    const totalBilled = dbService.get<{ total: number }>(`SELECT SUM(final_amount) as total FROM maintenance_letters ${letterFilterStr}`, letterParams)?.total || 0
-    
-    const totalCollected = dbService.get<{ total: number }>(`SELECT SUM(payment_amount) as total FROM payments ${paymentFilterStr}`, paymentParams)?.total || 0
+    const totalBilled =
+      dbService.get<{ total: number }>(
+        `SELECT SUM(final_amount) as total FROM maintenance_letters ${letterFilterStr}`,
+        letterParams
+      )?.total || 0
+
+    const totalCollected =
+      dbService.get<{ total: number }>(
+        `SELECT SUM(payment_amount) as total FROM payments ${paymentFilterStr}`,
+        paymentParams
+      )?.total || 0
 
     // Calculate collected this year (FY starting April 1st)
     let fiscalYearStart, fiscalYearEnd
@@ -210,9 +247,9 @@ class ProjectService {
       fiscalYearEnd = `${fiscalYearStartYear + 1}-03-31`
     }
 
-    const collectedThisYearParams: any[] = [fiscalYearStart, fiscalYearEnd]
+    const collectedThisYearParams: (string | number)[] = [fiscalYearStart, fiscalYearEnd]
     let collectedThisYearWhere = 'WHERE (payment_date BETWEEN ? AND ?)'
-    
+
     if (projectId) {
       collectedThisYearWhere += ' AND project_id = ?'
       collectedThisYearParams.push(projectId)
@@ -226,13 +263,16 @@ class ProjectService {
       collectedThisYearParams.push(status)
     }
 
-    const collectedThisYear = dbService.get<{ total: number }>(
-      `SELECT SUM(payment_amount) as total FROM payments ${collectedThisYearWhere}`,
-      collectedThisYearParams
-    )?.total || 0
+    const collectedThisYear =
+      dbService.get<{ total: number }>(
+        `SELECT SUM(payment_amount) as total FROM payments ${collectedThisYearWhere}`,
+        collectedThisYearParams
+      )?.total || 0
 
     // Calculate pending units
-    const pendingUnits = dbService.get<{ count: number }>(`
+    const pendingUnits =
+      dbService.get<{ count: number }>(
+        `
       SELECT COUNT(*) as count FROM (
         SELECT b.unit_id
         FROM (
@@ -243,7 +283,9 @@ class ProjectService {
         ) p ON b.unit_id = p.unit_id
         WHERE billed > COALESCE(paid, 0) + 0.01
       )
-    `, [...letterParams, ...paymentParams])?.count || 0
+    `,
+        [...letterParams, ...paymentParams]
+      )?.count || 0
 
     return {
       projects: projectsCount,

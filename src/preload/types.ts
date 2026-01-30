@@ -54,6 +54,7 @@ export interface MaintenanceRate {
   id?: number
   project_id: number
   financial_year: string
+  unit_type?: string
   rate_per_sqft: number
   billing_frequency?: string
   project_name?: string
@@ -94,4 +95,12 @@ export interface RepairResult {
     fkid: number
   }[]
   logs: string[]
+}
+
+export interface LetterAddOn {
+  id: number
+  letter_id: number
+  addon_name: string
+  addon_amount: number
+  remarks?: string
 }

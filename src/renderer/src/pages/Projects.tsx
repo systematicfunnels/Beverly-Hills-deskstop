@@ -1,8 +1,29 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, message, Divider, Upload, Card, Select, Tag } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined, SearchOutlined } from '@ant-design/icons'
-import * as XLSX from 'xlsx'
+import {
+  Table,
+  Button,
+  Space,
+  Modal,
+  Form,
+  Input,
+  message,
+  Upload,
+  Card,
+  Select,
+  Tag,
+  Tooltip
+} from 'antd'
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  UploadOutlined,
+  SearchOutlined
+} from '@ant-design/icons'
+import { IndianRupee } from 'lucide-react'
 import { Project } from '@preload/types'
+import { readExcelFile } from '../utils/excelReader'
+import MaintenanceRateModal from '../components/MaintenanceRateModal'
 
 const { Option } = Select
 
@@ -10,14 +31,16 @@ const Projects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isRateModalOpen, setIsRateModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
-  
+
   // Filter states
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [cityFilter, setCityFilter] = useState<string | null>(null)
-  
+
   const [form] = Form.useForm()
 
   const fetchProjects = async (): Promise<void> => {
@@ -47,7 +70,7 @@ const Projects: React.FC = () => {
   })
 
   // Get unique cities for filter
-  const uniqueCities = Array.from(new Set(projects.map(p => p.city).filter(Boolean)))
+  const uniqueCities = Array.from(new Set(projects.map((p) => p.city).filter(Boolean)))
 
   const handleAdd = (): void => {
     setEditingProject(null)
@@ -56,93 +79,106 @@ const Projects: React.FC = () => {
   }
 
   const handleImport = async (file: File): Promise<boolean> => {
-    const reader = new FileReader()
-    reader.onload = async (e): Promise<void> => {
-      try {
-        const data = e.target?.result
-        const workbook = XLSX.read(data, { type: 'binary' })
-        const sheetName = workbook.SheetNames[0]
-        const sheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[]
+    try {
+      message.loading({ content: 'Reading Excel file...', key: 'excel_read' })
+      const jsonData = await readExcelFile(file)
 
-        if (jsonData.length === 0) {
-          message.warning('No data found in the Excel file')
-          return
-        }
-
-        const projectsToImport = (jsonData
-          .map((row) => {
-            const normalizedRow: Record<string, unknown> = {}
-            Object.keys(row).forEach((key) => {
-              normalizedRow[String(key).toLowerCase().trim()] = row[key]
-            })
-
-            const getValue = (keys: string[]): unknown => {
-              for (const key of keys) {
-                if (
-                  normalizedRow[key] !== undefined &&
-                  normalizedRow[key] !== null &&
-                  String(normalizedRow[key]).trim() !== ''
-                ) {
-                  return normalizedRow[key]
-                }
-              }
-              return undefined
-            }
-
-            const name = String(
-              getValue([
-                'name',
-                'project name',
-                'project',
-                'building name',
-                'building',
-                'particulars'
-              ]) || ''
-            ).trim()
-
-            // If name is empty or looks like a header/id column, skip
-            if (!name || /^(name|project|building|id|no|particulars)$/i.test(name)) return null
-
-            return {
-              name,
-              address: String(getValue(['address', 'location', 'site address']) || '').trim(),
-              city: String(getValue(['city', 'town']) || 'Ahmedabad').trim(),
-              state: String(getValue(['state', 'region']) || 'Gujarat').trim(),
-              pincode: String(getValue(['pincode', 'pin', 'zip', 'zipcode']) || '').trim(),
-              status: 'Active',
-              bank_name: String(
-                getValue(['bank', 'bank name', 'bank_name', 'bank details']) || ''
-              ).trim(),
-              account_no: String(
-                getValue(['account', 'account no', 'account number', 'acc no', 'a/c no']) || ''
-              ).trim(),
-              ifsc_code: String(
-                getValue(['ifsc', 'ifsc code', 'ifsc_code', 'ifsc code']) || ''
-              ).trim()
-            }
-          })
-          .filter((p) => p !== null && !!p.name) as Project[])
-
-        if (projectsToImport.length === 0) {
-          message.warning('No valid projects found (Name is required)')
-          return
-        }
-
-        setLoading(true)
-        for (const p of projectsToImport) {
-          await window.api.projects.create(p)
-        }
-        message.success(`Successfully imported ${projectsToImport.length} projects`)
-        fetchProjects()
-      } catch (err) {
-        console.error(err)
-        message.error('Failed to parse Excel file')
-      } finally {
-        setLoading(false)
+      if (jsonData.length === 0) {
+        message.warning({ content: 'No data found in the Excel file', key: 'excel_read' })
+        return false
       }
+
+      message.success({ content: 'Excel file read successfully', key: 'excel_read' })
+
+      const projectsToImport = jsonData
+        .map((row) => {
+          const normalizedRow: Record<string, unknown> = {}
+          Object.keys(row).forEach((key) => {
+            normalizedRow[String(key).toLowerCase().trim()] = row[key]
+          })
+
+          const getValue = (keys: string[]): unknown => {
+            for (const key of keys) {
+              if (
+                normalizedRow[key] !== undefined &&
+                normalizedRow[key] !== null &&
+                String(normalizedRow[key]).trim() !== ''
+              ) {
+                return normalizedRow[key]
+              }
+            }
+            return undefined
+          }
+
+          const name = String(
+            getValue([
+              'name',
+              'project name',
+              'project',
+              'building',
+              'building name',
+              'society',
+              'society name'
+            ]) || ''
+          ).trim()
+
+          if (!name) return null
+
+          return {
+            name,
+            address: String(getValue(['address', 'location', 'site address']) || '').trim(),
+            city: String(getValue(['city', 'town', 'village']) || 'Bhiwandi').trim(),
+            state: String(getValue(['state', 'region']) || '').trim(),
+            pincode: String(getValue(['pincode', 'pin', 'zip', 'zipcode']) || '').trim(),
+            status: 'Active',
+            bank_name: String(
+              getValue(['bank', 'bank name', 'bank_name', 'bank details']) || ''
+            ).trim(),
+            account_no: String(
+              getValue(['account', 'account no', 'account number', 'acc no', 'a/c no']) || ''
+            ).trim(),
+            ifsc_code: String(getValue(['ifsc', 'ifsc code', 'ifsc_code']) || '').trim()
+          }
+        })
+        .filter((p) => p !== null) as Partial<Project>[]
+
+      if (projectsToImport.length === 0) {
+        message.warning(
+          'No valid projects found in the Excel file. Ensure there is a "Name" column.'
+        )
+        return false
+      }
+
+      Modal.confirm({
+        title: `Import ${projectsToImport.length} projects?`,
+        content: 'This will add new projects to the database.',
+        onOk: async () => {
+          setLoading(true)
+          try {
+            let count = 0
+            for (const project of projectsToImport) {
+              await window.api.projects.create(project as Project)
+              count++
+            }
+            message.success(`Successfully imported ${count} projects`)
+            fetchProjects()
+          } catch (error) {
+            message.error('Failed to import some projects')
+            console.error(error)
+          } finally {
+            setLoading(false)
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Error reading Excel file:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      message.error({
+        content: `Failed to read Excel file: ${errorMessage}`,
+        key: 'excel_read',
+        duration: 5
+      })
     }
-    reader.readAsBinaryString(file)
     return false
   }
 
@@ -150,6 +186,11 @@ const Projects: React.FC = () => {
     setEditingProject(record)
     form.setFieldsValue(record)
     setIsModalOpen(true)
+  }
+
+  const handleRates = (record: Project): void => {
+    setSelectedProject(record)
+    setIsRateModalOpen(true)
   }
 
   const handleDelete = async (id: number): Promise<void> => {
@@ -161,7 +202,7 @@ const Projects: React.FC = () => {
           await window.api.projects.delete(id)
           message.success('Project deleted successfully')
           fetchProjects()
-        } catch (error) {
+        } catch {
           message.error('Failed to delete project')
         }
       }
@@ -225,14 +266,12 @@ const Projects: React.FC = () => {
       key: 'unit_count',
       align: 'center' as const
     },
-    { 
-      title: 'Status', 
-      dataIndex: 'status', 
+    {
+      title: 'Status',
+      dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={status === 'Active' ? 'success' : 'error'}>
-          {status || 'Inactive'}
-        </Tag>
+        <Tag color={status === 'Active' ? 'success' : 'error'}>{status || 'Inactive'}</Tag>
       )
     },
     {
@@ -247,6 +286,9 @@ const Projects: React.FC = () => {
       align: 'right' as const,
       render: (_: unknown, record: Project) => (
         <Space size="middle">
+          <Tooltip title="Manage Rates">
+            <Button icon={<IndianRupee size={14} />} onClick={() => handleRates(record)} />
+          </Tooltip>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Button icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id!)} />
         </Space>
@@ -272,7 +314,11 @@ const Projects: React.FC = () => {
                 Delete Selected ({selectedRowKeys.length})
               </Button>
             )}
-            <Upload beforeUpload={handleImport} showUploadList={false}>
+            <Upload
+              beforeUpload={handleImport}
+              showUploadList={false}
+              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+            >
               <Button icon={<UploadOutlined />}>Import Excel</Button>
             </Upload>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -336,7 +382,7 @@ const Projects: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ status: 'Active', city: 'Ahmedabad', state: 'Gujarat' }}
+          initialValues={{ status: 'Active', city: 'Ahmedabad' }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Form.Item
@@ -356,34 +402,24 @@ const Projects: React.FC = () => {
               <Input />
             </Form.Item>
 
-            <Form.Item name="state" label="State">
-              <Input />
-            </Form.Item>
-
-            <Form.Item name="pincode" label="Pincode">
-              <Input />
-            </Form.Item>
-
             <Form.Item name="status" label="Status">
-              <Input />
-            </Form.Item>
-
-            <Divider style={{ gridColumn: 'span 2', margin: '8px 0' }}>Bank Details</Divider>
-
-            <Form.Item name="bank_name" label="Bank Name">
-              <Input />
-            </Form.Item>
-
-            <Form.Item name="account_no" label="Account Number">
-              <Input />
-            </Form.Item>
-
-            <Form.Item name="ifsc_code" label="IFSC Code">
-              <Input />
+              <Select>
+                <Option value="Active">Active</Option>
+                <Option value="Inactive">Inactive</Option>
+              </Select>
             </Form.Item>
           </div>
         </Form>
       </Modal>
+
+      {selectedProject && (
+        <MaintenanceRateModal
+          visible={isRateModalOpen}
+          projectId={selectedProject.id!}
+          projectName={selectedProject.name}
+          onCancel={() => setIsRateModalOpen(false)}
+        />
+      )}
     </div>
   )
 }

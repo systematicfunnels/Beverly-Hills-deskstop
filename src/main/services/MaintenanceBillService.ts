@@ -1,5 +1,5 @@
 import { dbService } from '../db/database'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
@@ -265,13 +265,13 @@ class MaintenanceBillService {
   }
 
   private drawDefaultHeader(
-    page: any,
+    page: PDFPage,
     width: number,
     height: number,
     projectName: string,
-    boldFont: any,
-    font: any
-  ) {
+    boldFont: PDFFont,
+    font: PDFFont
+  ): void {
     page.drawRectangle({
       x: 0,
       y: height - 100,
@@ -373,7 +373,15 @@ class MaintenanceBillService {
     const pid = Number(projectId)
 
     // Allow Active, Occupied, and Vacant statuses (case-insensitive)
-    const unitsList = dbService.query<any>(
+    const unitsList = dbService.query<{
+      id: number
+      unit_number: string
+      owner_name: string
+      area_sqft: number
+      unit_type: string
+      bungalow?: string
+      status: string
+    }>(
       "SELECT * FROM units WHERE project_id = ? AND (LOWER(status) IN ('active', 'occupied', 'vacant'))",
       [pid]
     )
@@ -436,7 +444,7 @@ class MaintenanceBillService {
     let discountPercentage = 0
 
     if (!ratePerSqft) {
-      const rateEntry = dbService.get<any>(
+      const rateEntry = dbService.get<{ id: number; rate_per_sqft: number }>(
         'SELECT * FROM maintenance_rates WHERE project_id = ? AND financial_year = ?',
         [projectId, year]
       )
@@ -454,7 +462,7 @@ class MaintenanceBillService {
       ratePerSqft = rateEntry.rate_per_sqft
 
       // Check for early payment discount
-      const slab = dbService.get<any>(
+      const slab = dbService.get<{ discount_percentage: number }>(
         'SELECT * FROM maintenance_slabs WHERE rate_id = ? AND is_early_payment = 1',
         [rateEntry.id]
       )
@@ -520,7 +528,7 @@ class MaintenanceBillService {
 
   public recalculatePenalties(): void {
     const today = new Date().toISOString().split('T')[0]
-    const unpaidBills = dbService.query<any>(
+    const unpaidBills = dbService.query<MaintenanceBill & { penalty_rate_setting: string | null }>(
       `
       SELECT b.*, p.value as penalty_rate_setting
       FROM unit_maintenance_bills b
@@ -532,6 +540,8 @@ class MaintenanceBillService {
 
     dbService.transaction(() => {
       for (const bill of unpaidBills) {
+        if (!bill.due_date) continue
+
         const dueDate = new Date(bill.due_date)
         const currentDate = new Date()
         const diffTime = Math.abs(currentDate.getTime() - dueDate.getTime())
@@ -541,17 +551,17 @@ class MaintenanceBillService {
           ? Number(bill.penalty_rate_setting) / 100
           : 0.21
         // Simple interest calculation: (Maintenance * Rate * Days) / 365
-        const newPenalty = (bill.maintenance * penaltyRate * diffDays) / 365
+        const newPenalty = ((bill.maintenance || 0) * penaltyRate * diffDays) / 365
 
-        if (newPenalty > bill.penalty) {
+        if (newPenalty > (bill.penalty || 0)) {
           const newTotal =
-            bill.maintenance +
-            bill.na_tax +
-            bill.rd_na +
-            bill.cable +
-            bill.other_charges +
+            (bill.maintenance || 0) +
+            (bill.na_tax || 0) +
+            (bill.rd_na || 0) +
+            (bill.cable || 0) +
+            (bill.other_charges || 0) +
             newPenalty -
-            bill.discount
+            (bill.discount || 0)
           dbService.run(
             `
             UPDATE unit_maintenance_bills 
@@ -623,7 +633,7 @@ class MaintenanceBillService {
     })
   }
 
-  public bulkCreate(bills: any[]): { success: number; skipped: number } {
+  public bulkCreate(bills: Record<string, unknown>[]): { success: number; skipped: number } {
     let successCount = 0
     let skippedCount = 0
 
@@ -631,8 +641,11 @@ class MaintenanceBillService {
 
     // Diagnostic: Log all projects to see what IDs we have
     try {
-      const allProjects = dbService.query('SELECT id, name FROM projects') as any[]
-      console.log('[DEBUG] Available Project IDs:', allProjects.map((p: any) => p.id).join(', '))
+      const allProjects = dbService.query('SELECT id, name FROM projects') as Record<
+        string,
+        unknown
+      >[]
+      console.log('[DEBUG] Available Project IDs:', allProjects.map((p) => p.id).join(', '))
     } catch (e) {
       console.error('[DEBUG] Failed to run diagnostic queries:', e)
     }
@@ -655,7 +668,10 @@ class MaintenanceBillService {
             // Verify project exists in DB to avoid FK error
             const projectExists = dbService.get('SELECT id FROM projects WHERE id = ?', [projectId])
             if (!projectExists) {
-              const allProjects = dbService.query('SELECT id, name FROM projects') as any[]
+              const allProjects = dbService.query('SELECT id, name FROM projects') as Record<
+                string,
+                unknown
+              >[]
               const availableIds = allProjects.map((p) => p.id).join(', ')
               console.error(
                 `[DEBUG] Project ID ${projectId} does not exist in database! Available IDs: ${availableIds}. Skipping row.`
@@ -665,14 +681,14 @@ class MaintenanceBillService {
             }
 
             // Find unit or create it
-            let unit: any = null
-            const unitNo = bill.unit_number || bill.unit_no
+            let unit: { id: number } | undefined = undefined
+            const unitNo = (bill.unit_number || bill.unit_no) as string | undefined
 
             // Try to find existing unit by project_id and (plot/bungalow OR unit_number)
             if (bill.plot && bill.bungalow) {
               unit = dbService.get<{ id: number }>(
                 'SELECT id FROM units WHERE project_id = ? AND plot = ? AND bungalow = ?',
-                [projectId, bill.plot, bill.bungalow]
+                [projectId, bill.plot as string, bill.bungalow as string]
               )
             }
 
@@ -685,11 +701,11 @@ class MaintenanceBillService {
 
             if (!unit) {
               console.log(
-                `Creating unit: project_id=${projectId}, unit_number=${unitNo || bill.plot}`
+                `Creating unit: project_id=${projectId}, unit_number=${unitNo || (bill.plot as string)}`
               )
               try {
                 // Ensure unit_number is not null for the constraint
-                const finalUnitNumber = unitNo || bill.plot || 'Unknown'
+                const finalUnitNumber = unitNo || (bill.plot as string) || 'Unknown'
 
                 const result = dbService.run(
                   `
@@ -700,17 +716,19 @@ class MaintenanceBillService {
                   [
                     projectId,
                     finalUnitNumber,
-                    bill.plot || null,
-                    bill.bungalow || null,
-                    bill.owner_name || 'Imported Owner',
-                    bill.area_sqft || 0,
-                    bill.unit_type || 'Flat'
+                    (bill.plot as string) || null,
+                    (bill.bungalow as string) || null,
+                    (bill.owner_name as string) || 'Imported Owner',
+                    (bill.area_sqft as number) || 0,
+                    (bill.unit_type as string) || 'Flat'
                   ]
                 )
-                unit = { id: result.lastInsertRowid }
-              } catch (insertError: any) {
+                unit = { id: result.lastInsertRowid as number }
+              } catch (insertError: unknown) {
+                const errorMessage =
+                  insertError instanceof Error ? insertError.message : String(insertError)
                 console.error(
-                  `[DEBUG] Failed to insert unit: project_id=${projectId}, unit=${unitNo}. Error: ${insertError.message}`
+                  `[DEBUG] Failed to insert unit: project_id=${projectId}, unit=${unitNo}. Error: ${errorMessage}`
                 )
                 throw insertError // Re-throw to be caught by the outer row-level try-catch
               }
@@ -736,9 +754,9 @@ class MaintenanceBillService {
               throw new Error(`Unit ID missing after creation/fetch for unit ${unitNo}`)
             }
 
-            const existingBill = dbService.get(
+            const existingBill = dbService.get<{ id: number }>(
               'SELECT id FROM unit_maintenance_bills WHERE unit_id = ? AND project_id = ? AND year = ?',
-              [unit.id, projectId, bill.year || '2024-25']
+              [unit.id, projectId, (bill.year as string) || '2024-25']
             )
 
             // Clean maintenance values (ensure they are numbers)
@@ -756,15 +774,7 @@ class MaintenanceBillService {
                   maintenance = ?, rd_na = ?, na_tax = ?, cable = ?, penalty = ?, year_total = ?
                 WHERE id = ?
               `,
-                [
-                  maintenanceVal,
-                  rdNaVal,
-                  naTaxVal,
-                  cableVal,
-                  penaltyVal,
-                  totalVal,
-                  (existingBill as any).id
-                ]
+                [maintenanceVal, rdNaVal, naTaxVal, cableVal, penaltyVal, totalVal, existingBill.id]
               )
             } else {
               try {
@@ -777,7 +787,7 @@ class MaintenanceBillService {
                   [
                     unit.id,
                     projectId,
-                    bill.year || '2024-25',
+                    (bill.year as string) || '2024-25',
                     maintenanceVal,
                     rdNaVal,
                     naTaxVal,
@@ -786,24 +796,29 @@ class MaintenanceBillService {
                     totalVal
                   ]
                 )
-              } catch (billInsertError: any) {
+              } catch (billInsertError: unknown) {
+                const errorMessage =
+                  billInsertError instanceof Error
+                    ? billInsertError.message
+                    : String(billInsertError)
                 console.error(
-                  `[DEBUG] Failed to insert bill: unit_id=${unit.id}, project_id=${projectId}. Error: ${billInsertError.message}`
+                  `[DEBUG] Failed to insert bill: unit_id=${unit.id}, project_id=${projectId}. Error: ${errorMessage}`
                 )
                 throw billInsertError
               }
             }
 
             successCount++
-          } catch (e: any) {
+          } catch (e: unknown) {
+            const errorMessage = e instanceof Error ? e.message : String(e)
             console.error(
-              `Error processing row: project_id=${bill.project_id}, unit=${bill.unit_number || bill.plot}. Error: ${e.message}`
+              `Error processing row: project_id=${bill.project_id}, unit=${(bill.unit_number as string) || (bill.plot as string)}. Error: ${errorMessage}`
             )
             skippedCount++
           }
         }
       })
-    } catch (transactionError: any) {
+    } catch (transactionError: unknown) {
       console.error('[DEBUG] Transaction failed in bulkCreate:', transactionError)
       // Try to get more info about why it failed (e.g., FK constraint)
       try {
@@ -814,8 +829,8 @@ class MaintenanceBillService {
             JSON.stringify(violations, null, 2)
           )
         }
-      } catch (e) {
-        void e
+      } catch {
+        // ignore
       }
       throw transactionError // Re-throw to inform caller
     }

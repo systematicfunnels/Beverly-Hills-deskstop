@@ -29,7 +29,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 
-import { MaintenanceLetter, Project } from '@preload/types'
+import { MaintenanceLetter, Project, LetterAddOn } from '@preload/types'
 
 const { Title } = Typography
 const { Option } = Select
@@ -42,25 +42,28 @@ const Billing: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
-  
+
   // Default to current financial year
   const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
   const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
   const [selectedYear, setSelectedYear] = useState<string | null>(defaultFY)
-  
+
   const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
   const [selectedWing, setSelectedWing] = useState<string | null>(null)
   const [amountRange, setAmountRange] = useState<[number | null, number | null]>([null, null])
-  const [dueDateRange, setDueDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null])
+  const [dueDateRange, setDueDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
+    null,
+    null
+  ])
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [searchText, setSearchText] = useState('')
   const [addOnsModalVisible, setAddOnsModalVisible] = useState(false)
-  const [currentLetterAddOns, setCurrentLetterAddOns] = useState<any[]>([])
+  const [currentLetterAddOns, setCurrentLetterAddOns] = useState<LetterAddOn[]>([])
   const [currentLetter, setCurrentLetter] = useState<MaintenanceLetter | null>(null)
   const [form] = Form.useForm()
 
-  const fetchData = async () => {
+  const fetchData = async (): Promise<void> => {
     setLoading(true)
     try {
       const [lettersData, projectsData] = await Promise.all([
@@ -70,7 +73,7 @@ const Billing: React.FC = () => {
       setLetters(lettersData)
       setProjects(projectsData)
       setSelectedRowKeys([])
-    } catch (error) {
+    } catch {
       message.error('Failed to fetch data')
     } finally {
       setLoading(false)
@@ -81,12 +84,12 @@ const Billing: React.FC = () => {
     fetchData()
   }, [])
 
-  const handleBatchGenerate = () => {
+  const handleBatchGenerate = (): void => {
     form.resetFields()
     setIsModalOpen(true)
   }
 
-  const handleShowAddOns = async (record: MaintenanceLetter) => {
+  const handleShowAddOns = async (record: MaintenanceLetter): Promise<void> => {
     if (!record.id) return
     try {
       setLoading(true)
@@ -94,14 +97,14 @@ const Billing: React.FC = () => {
       setCurrentLetterAddOns(data)
       setCurrentLetter(record)
       setAddOnsModalVisible(true)
-    } catch (error) {
+    } catch {
       message.error('Failed to fetch add-ons')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleModalOk = async () => {
+  const handleModalOk = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
       const { project_id, financial_year, letter_date, due_date, add_ons } = values
@@ -120,19 +123,20 @@ const Billing: React.FC = () => {
       message.success('Maintenance letters generated successfully')
       setIsModalOpen(false)
       fetchData()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
       // Display the specific error message from the backend if available
-      const errorMessage = error.message?.includes('Error:') 
-        ? error.message.split('Error:')[1].trim() 
-        : error.message || 'Failed to generate maintenance letters'
+      const messageText = error instanceof Error ? error.message : String(error)
+      const errorMessage = messageText.includes('Error:')
+        ? messageText.split('Error:')[1].trim()
+        : messageText || 'Failed to generate maintenance letters'
       message.error(errorMessage)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleViewPdf = async (id: number) => {
+  const handleViewPdf = async (id: number): Promise<void> => {
     try {
       message.loading({ content: 'Generating Letter...', key: 'pdf_gen' })
       const path = await window.api.letters.generatePdf(id)
@@ -152,12 +156,12 @@ const Billing: React.FC = () => {
         ),
         placement: 'bottomRight'
       })
-    } catch (error) {
+    } catch {
       message.error({ content: 'Failed to generate letter', key: 'pdf_gen' })
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number): Promise<void> => {
     Modal.confirm({
       title: 'Are you sure you want to delete this maintenance letter?',
       content: 'This action cannot be undone.',
@@ -172,7 +176,7 @@ const Billing: React.FC = () => {
     })
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = async (): Promise<void> => {
     Modal.confirm({
       title: `Are you sure you want to delete ${selectedRowKeys.length} maintenance letters?`,
       content: 'This action cannot be undone.',
@@ -185,7 +189,7 @@ const Billing: React.FC = () => {
           await window.api.letters.bulkDelete(selectedRowKeys as number[])
           message.success(`Successfully deleted ${selectedRowKeys.length} maintenance letters`)
           fetchData()
-        } catch (error) {
+        } catch {
           message.error('Failed to delete maintenance letters')
         } finally {
           setLoading(false)
@@ -201,28 +205,42 @@ const Billing: React.FC = () => {
       !searchText ||
       letter.unit_number?.toLowerCase().includes(searchText.toLowerCase()) ||
       letter.owner_name?.toLowerCase().includes(searchText.toLowerCase())
-    
+
     // Status Logic: Pending (is_paid=0), Paid (is_paid=1)
-    const matchStatus = !selectedStatus || 
-      (selectedStatus === 'Paid' && letter.status === 'Paid') || 
+    const matchStatus =
+      !selectedStatus ||
+      (selectedStatus === 'Paid' && letter.status === 'Paid') ||
       (selectedStatus === 'Pending' && letter.status === 'Pending')
 
     const matchUnitType = !selectedUnitType || letter.unit_type === selectedUnitType
     const matchWing = !selectedWing || letter.wing === selectedWing
-    
+
     const matchMinAmount = amountRange[0] === null || letter.final_amount >= amountRange[0]
     const matchMaxAmount = amountRange[1] === null || letter.final_amount <= amountRange[1]
-    
-    const letterDueDate = letter.due_date ? dayjs(letter.due_date) : null
-    const matchMinDueDate = !dueDateRange[0] || (letterDueDate && letterDueDate.isSameOrAfter(dueDateRange[0], 'day'))
-    const matchMaxDueDate = !dueDateRange[1] || (letterDueDate && letterDueDate.isSameOrBefore(dueDateRange[1], 'day'))
 
-    return matchProject && matchYear && matchSearch && matchStatus && 
-           matchUnitType && matchWing && matchMinAmount && matchMaxAmount &&
-           matchMinDueDate && matchMaxDueDate
+    const letterDueDate = letter.due_date ? dayjs(letter.due_date) : null
+    const matchMinDueDate =
+      !dueDateRange[0] || (letterDueDate && letterDueDate.isSameOrAfter(dueDateRange[0], 'day'))
+    const matchMaxDueDate =
+      !dueDateRange[1] || (letterDueDate && letterDueDate.isSameOrBefore(dueDateRange[1], 'day'))
+
+    return (
+      matchProject &&
+      matchYear &&
+      matchSearch &&
+      matchStatus &&
+      matchUnitType &&
+      matchWing &&
+      matchMinAmount &&
+      matchMaxAmount &&
+      matchMinDueDate &&
+      matchMaxDueDate
+    )
   })
 
-  const uniqueYears = Array.from(new Set(letters.map((l) => l.financial_year))).sort().reverse()
+  const uniqueYears = Array.from(new Set(letters.map((l) => l.financial_year)))
+    .sort()
+    .reverse()
   const uniqueWings = Array.from(new Set(letters.map((l) => l.wing).filter(Boolean))).sort()
 
   const columns = [
@@ -266,7 +284,7 @@ const Billing: React.FC = () => {
       align: 'right' as const,
       render: (val: number) => (
         <Button type="link" size="small">
-          ₹${(val || 0).toLocaleString()}
+          ₹{(val || 0).toLocaleString()}
         </Button>
       ),
       onCell: (record: MaintenanceLetter) => ({
@@ -281,7 +299,7 @@ const Billing: React.FC = () => {
       dataIndex: 'final_amount',
       key: 'final_amount',
       align: 'right' as const,
-      render: (val: number) => <strong>₹${(val || 0).toLocaleString()}</strong>,
+      render: (val: number) => <strong>₹{(val || 0).toLocaleString()}</strong>,
       sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.final_amount - b.final_amount
     },
     {
@@ -294,16 +312,14 @@ const Billing: React.FC = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'Paid' ? 'green' : 'orange'}>{status}</Tag>
-      )
+      render: (status: string) => <Tag color={status === 'Paid' ? 'green' : 'orange'}>{status}</Tag>
     },
     {
       title: 'Actions',
       key: 'actions',
       align: 'right' as const,
       fixed: 'right' as const,
-      render: (_: any, record: MaintenanceLetter) => (
+      render: (_: unknown, record: MaintenanceLetter) => (
         <Space size="middle">
           <Button
             type="primary"
@@ -487,10 +503,10 @@ const Billing: React.FC = () => {
           form={form}
           layout="vertical"
           initialValues={{
-            letter_date: dayjs(),
-            due_date: dayjs().add(15, 'day'),
-            financial_year: `${dayjs().year()}-${(dayjs().year() + 1).toString().slice(2)}`
-          }}
+          letter_date: dayjs(),
+          due_date: dayjs().add(15, 'day'),
+          financial_year: selectedYear || defaultFY
+        }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Form.Item

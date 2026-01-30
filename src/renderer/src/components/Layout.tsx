@@ -5,10 +5,10 @@ import {
   HomeOutlined,
   UserOutlined,
   FileTextOutlined,
-  DollarOutlined,
   BarChartOutlined,
   SettingOutlined
 } from '@ant-design/icons'
+import { IndianRupee } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
 const { Sider, Content, Header } = AntLayout
@@ -48,7 +48,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     },
     {
       key: '/payments',
-      icon: <DollarOutlined />,
+      icon: <IndianRupee size={16} />,
       label: 'Payments'
     },
     {

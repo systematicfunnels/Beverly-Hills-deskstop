@@ -20,13 +20,13 @@ class DatabaseService {
     this.init()
 
     // Step 2: Clean up any leftover _old tables from previous failed runs/migrations
-    this.cleanupOldTables()
+    // this.cleanupOldTables()
 
     // Step 3: Check for and fix broken foreign key references
-    this.fixBrokenForeignKeys()
+    // this.fixBrokenForeignKeys()
 
     // Step 4: Clean up orphans and enforce project_id constraints
-    this.cleanupOrphanData()
+    // this.cleanupOrphanData()
 
     // Step 5: Enable foreign keys only after data integrity is verified
     this.db.pragma('foreign_keys = ON')
@@ -41,7 +41,7 @@ class DatabaseService {
     }
   }
 
-  private cleanupOldTables(): void {
+  public cleanupOldTables(): void {
     try {
       const tables = this.db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_old'")
@@ -55,7 +55,7 @@ class DatabaseService {
     }
   }
 
-  private fixBrokenForeignKeys(): void {
+  public fixBrokenForeignKeys(): void {
     try {
       // List of all tables in dependency order (top-down)
       const allTables = [
@@ -165,7 +165,7 @@ class DatabaseService {
     }
   }
 
-  private cleanupOrphanData(): void {
+  public cleanupOrphanData(): void {
     try {
       this.transaction(() => {
         // 1. Delete maintenance letters without valid units or projects
@@ -262,7 +262,9 @@ class DatabaseService {
       // 2.2 Ensure maintenance_letters table has new columns
       if (
         this.db
-          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_letters'")
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_letters'"
+          )
           .get()
       ) {
         const columns = this.db.prepare('PRAGMA table_info(maintenance_letters)').all() as {
@@ -274,9 +276,11 @@ class DatabaseService {
           this.db.exec('ALTER TABLE maintenance_letters ADD COLUMN is_paid BOOLEAN DEFAULT 0')
         if (!columns.some((c) => c.name === 'is_sent'))
           this.db.exec('ALTER TABLE maintenance_letters ADD COLUMN is_sent BOOLEAN DEFAULT 0')
-          
+
         // Add unique index for granularity enforcement
-        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_fy ON maintenance_letters(unit_id, financial_year)')
+        this.db.exec(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_fy ON maintenance_letters(unit_id, financial_year)'
+        )
       }
 
       // 3. Migrate 'units' table
@@ -292,7 +296,7 @@ class DatabaseService {
           console.log('Renaming society_id column to project_id in units table...')
           try {
             this.db.exec('ALTER TABLE units RENAME COLUMN society_id TO project_id')
-          } catch (e) {
+          } catch {
             this.db.exec(`
               ALTER TABLE units ADD COLUMN project_id INTEGER;
               UPDATE units SET project_id = society_id;
@@ -504,7 +508,12 @@ class DatabaseService {
   }
 
   public transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)()
+    try {
+      return this.db.transaction(fn)()
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      throw new Error(`Transaction failed: ${message}`)
+    }
   }
 }
 

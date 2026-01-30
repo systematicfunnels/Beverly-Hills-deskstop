@@ -36,9 +36,12 @@ export function registerIpcHandlers(): void {
     return projectService.bulkDelete(ids)
   })
 
-  ipcMain.handle('get-dashboard-stats', (_, projectId?: number, financialYear?: string, unitType?: string, status?: string) => {
-    return projectService.getDashboardStats(projectId, financialYear, unitType, status)
-  })
+  ipcMain.handle(
+    'get-dashboard-stats',
+    (_, projectId?: number, financialYear?: string, unitType?: string, status?: string) => {
+      return projectService.getDashboardStats(projectId, financialYear, unitType, status)
+    }
+  )
 
   // Units
   ipcMain.handle('get-units', (): Unit[] => {
@@ -236,6 +239,13 @@ export function registerIpcHandlers(): void {
         )
         dbService.run('DELETE FROM maintenance_letters WHERE unit_id NOT IN (SELECT id FROM units)')
       }
+      
+      // 5. Run deep cleanup methods (exposed from database.ts)
+      logs.push('Running deep cleanup tasks...')
+      dbService.cleanupOldTables()
+      dbService.fixBrokenForeignKeys()
+      dbService.cleanupOrphanData()
+      logs.push('Deep cleanup tasks completed.')
 
       logs.push('Database check completed successfully.')
       return {

@@ -10,10 +10,16 @@ const api = {
     getAll: () => ipcRenderer.invoke('get-projects'),
     getById: (id: number) => ipcRenderer.invoke('get-project', id),
     create: (project: Project) => ipcRenderer.invoke('create-project', project),
-    update: (id: number, project: Partial<Project>) => ipcRenderer.invoke('update-project', id, project),
+    update: (id: number, project: Partial<Project>) =>
+      ipcRenderer.invoke('update-project', id, project),
     delete: (id: number) => ipcRenderer.invoke('delete-project', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-projects', ids),
-    getDashboardStats: (projectId?: number, financialYear?: string, unitType?: string, status?: string) => ipcRenderer.invoke('get-dashboard-stats', projectId, financialYear, unitType, status)
+    getDashboardStats: (
+      projectId?: number,
+      financialYear?: string,
+      unitType?: string,
+      status?: string
+    ) => ipcRenderer.invoke('get-dashboard-stats', projectId, financialYear, unitType, status)
   },
   units: {
     getAll: () => ipcRenderer.invoke('get-units'),
@@ -23,7 +29,7 @@ const api = {
     delete: (id: number) => ipcRenderer.invoke('delete-unit', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-units', ids),
     bulkCreate: (units: Unit[]) => ipcRenderer.invoke('bulk-create-units', units),
-    importLedger: (params: { projectId: number; rows: any[] }) =>
+    importLedger: (params: { projectId: number; rows: Record<string, unknown>[] }) =>
       ipcRenderer.invoke('import-ledger', params)
   },
   letters: {
@@ -40,7 +46,8 @@ const api = {
     getAll: () => ipcRenderer.invoke('get-rates'),
     getByProject: (projectId: number) => ipcRenderer.invoke('get-rates-by-project', projectId),
     create: (rate: MaintenanceRate) => ipcRenderer.invoke('create-rate', rate),
-    update: (id: number, rate: Partial<MaintenanceRate>) => ipcRenderer.invoke('update-rate', id, rate),
+    update: (id: number, rate: Partial<MaintenanceRate>) =>
+      ipcRenderer.invoke('update-rate', id, rate),
     delete: (id: number) => ipcRenderer.invoke('delete-rate', id),
     getSlabs: (rateId: number) => ipcRenderer.invoke('get-slabs', rateId),
     addSlab: (slab: MaintenanceSlab) => ipcRenderer.invoke('add-slab', slab),

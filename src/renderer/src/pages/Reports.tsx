@@ -1,7 +1,19 @@
-import React, { useState, useEffect } from 'react'
-import { Card, Row, Col, Statistic, Typography, Table, Select, Space, Button } from 'antd'
-import { FileExcelOutlined, ProjectOutlined } from '@ant-design/icons'
-import * as XLSX from 'xlsx'
+import React, { useState, useEffect, useCallback } from 'react'
+import {
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Typography,
+  Table,
+  Select,
+  Space,
+  Button,
+  TableProps,
+  Tooltip
+} from 'antd'
+import { FileExcelOutlined, ProjectOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
+import ExcelJS from 'exceljs'
 import dayjs from 'dayjs'
 
 import { Project } from '@preload/types'
@@ -9,12 +21,18 @@ import { Project } from '@preload/types'
 const { Title, Text } = Typography
 const { Option } = Select
 
+interface YearlyData {
+  billed: number
+  paid: number
+  balance: number
+}
+
 interface PivotData {
   key: string
   unit_number: string
   owner_name: string
   project_name: string
-  [year: string]: any // Dynamically add year columns
+  [year: string]: string | number | YearlyData
   total_billed: number
   total_paid: number
   outstanding: number
@@ -32,7 +50,7 @@ const Reports: React.FC = () => {
     outstanding: 0
   })
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (): Promise<void> => {
     setLoading(true)
     try {
       const [allProjects, allUnits, allLetters, allPayments] = await Promise.all([
@@ -81,14 +99,16 @@ const Reports: React.FC = () => {
         }
 
         uniqueYears.forEach((year) => {
-          const letter = filteredLetters.find((l) => l.unit_id === unit.id && l.financial_year === year)
+          const letter = filteredLetters.find(
+            (l) => l.unit_id === unit.id && l.financial_year === year
+          )
           const paymentsForYear = filteredPayments.filter(
             (p) => p.unit_id === unit.id && p.financial_year === year
           )
-          
+
           const billed = letter ? letter.final_amount : 0
           const paid = paymentsForYear.reduce((sum, p) => sum + p.payment_amount, 0)
-          
+
           row[year] = { billed, paid, balance: billed - paid }
           row.total_billed += billed
           row.total_paid += paid
@@ -99,48 +119,94 @@ const Reports: React.FC = () => {
       })
 
       setPivotData(data)
-    } catch (error) {
-      console.error('Failed to fetch report data', error)
+    } catch {
+      // console.error('Failed to fetch report data', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedProject])
 
   useEffect(() => {
     fetchData()
-  }, [selectedProject])
+  }, [fetchData])
 
-  const exportToExcel = () => {
-    const exportData = pivotData.map((row) => {
-      const exportRow: any = {
-        Project: row.project_name,
-        Unit: row.unit_number,
-        Owner: row.owner_name
-      }
-      years.forEach((year) => {
-        exportRow[`${year} Billed`] = row[year]?.billed || 0
-        exportRow[`${year} Paid`] = row[year]?.paid || 0
-        exportRow[`${year} Balance`] = row[year]?.balance || 0
-      })
-      exportRow['Total Billed'] = row.total_billed
-      exportRow['Total Paid'] = row.total_paid
-      exportRow['Total Outstanding'] = row.outstanding
-      return exportRow
+  const exportToExcel = async (): Promise<void> => {
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('Financial Report')
+
+    // Define columns
+    const columns = [
+      { header: 'Project', key: 'Project', width: 20 },
+      { header: 'Unit', key: 'Unit', width: 15 },
+      { header: 'Owner', key: 'Owner', width: 25 }
+    ]
+
+    years.forEach((year) => {
+      columns.push({ header: `${year} Billed`, key: `${year}_Billed`, width: 15 })
+      columns.push({ header: `${year} Paid`, key: `${year}_Paid`, width: 15 })
+      columns.push({ header: `${year} Balance`, key: `${year}_Balance`, width: 15 })
     })
 
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Financial Report')
-    XLSX.writeFile(wb, `Financial_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`)
+    columns.push({ header: 'Total Billed', key: 'Total_Billed', width: 15 })
+    columns.push({ header: 'Total Paid', key: 'Total_Paid', width: 15 })
+    columns.push({ header: 'Total Outstanding', key: 'Total_Outstanding', width: 15 })
+
+    worksheet.columns = columns
+
+    // Add rows
+    pivotData.forEach((row) => {
+      const exportRow: Record<string, string | number> = {
+        Project: row.project_name,
+        Unit: row.unit_number,
+        Owner: row.owner_name,
+        Total_Billed: row.total_billed,
+        Total_Paid: row.total_paid,
+        Total_Outstanding: row.outstanding
+      }
+
+      years.forEach((year) => {
+        const yearData = row[year] as YearlyData
+        exportRow[`${year}_Billed`] = yearData?.billed || 0
+        exportRow[`${year}_Paid`] = yearData?.paid || 0
+        exportRow[`${year}_Balance`] = yearData?.balance || 0
+      })
+
+      worksheet.addRow(exportRow)
+    })
+
+    // Style the header
+    worksheet.getRow(1).font = { bold: true }
+
+    // Generate buffer and save
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `Financial_Report_${dayjs().format('YYYY-MM-DD')}.xlsx`
+    anchor.click()
+    window.URL.revokeObjectURL(url)
   }
 
   const columns = [
+    {
+      title: 'Project',
+      dataIndex: 'project_name',
+      key: 'project_name',
+      fixed: 'left' as const,
+      width: 150,
+      ellipsis: true,
+      sorter: (a: PivotData, b: PivotData) => (a.project_name || '').localeCompare(b.project_name || '')
+    },
     {
       title: 'Unit',
       dataIndex: 'unit_number',
       key: 'unit_number',
       fixed: 'left' as const,
-      width: 100
+      width: 100,
+      sorter: (a: PivotData, b: PivotData) => a.unit_number.localeCompare(b.unit_number)
     },
     {
       title: 'Owner',
@@ -148,27 +214,62 @@ const Reports: React.FC = () => {
       key: 'owner_name',
       fixed: 'left' as const,
       width: 150,
-      ellipsis: true
+      ellipsis: true,
+      sorter: (a: PivotData, b: PivotData) => a.owner_name.localeCompare(b.owner_name)
     },
     ...years.map((year) => ({
       title: year,
       children: [
         {
-          title: 'Bal',
+          title: 'Due',
           key: `${year}_bal`,
           width: 100,
           align: 'right' as const,
           render: (row: PivotData) => {
-            const val = row[year]?.balance || 0
+            const yearData = row[year]
+            const val =
+              yearData && typeof yearData === 'object' && 'balance' in yearData
+                ? (yearData as YearlyData).balance
+                : 0
+            const billed =
+              yearData && typeof yearData === 'object' && 'billed' in yearData
+                ? (yearData as YearlyData).billed
+                : 0
+            const paid =
+              yearData && typeof yearData === 'object' && 'paid' in yearData
+                ? (yearData as YearlyData).paid
+                : 0
+
             return (
-              <Text type={val > 0 ? 'danger' : 'success'} style={{ fontSize: '12px' }}>
-                {val > 0 ? `₹${val.toLocaleString()}` : '-'}
-              </Text>
+              <Tooltip title={`Billed: ₹${billed.toLocaleString()} | Paid: ₹${paid.toLocaleString()}`}>
+                <Text type={val > 0 ? 'danger' : 'success'} style={{ fontSize: '12px' }}>
+                  {val > 0 && <ExclamationCircleOutlined style={{ marginRight: 4 }} />}
+                  {val > 0 ? `₹${val.toLocaleString()}` : '-'}
+                </Text>
+              </Tooltip>
             )
           }
         }
       ]
     })),
+    {
+      title: 'Total Billed',
+      dataIndex: 'total_billed',
+      key: 'total_billed',
+      width: 120,
+      align: 'right' as const,
+      render: (val: number) => `₹${val.toLocaleString()}`,
+      sorter: (a: PivotData, b: PivotData) => a.total_billed - b.total_billed
+    },
+    {
+      title: 'Total Paid',
+      dataIndex: 'total_paid',
+      key: 'total_paid',
+      width: 120,
+      align: 'right' as const,
+      render: (val: number) => `₹${val.toLocaleString()}`,
+      sorter: (a: PivotData, b: PivotData) => a.total_paid - b.total_paid
+    },
     {
       title: 'Total Outstanding',
       dataIndex: 'outstanding',
@@ -187,8 +288,17 @@ const Reports: React.FC = () => {
 
   return (
     <div style={{ padding: '0 8px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Financial Reports</Title>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24
+        }}
+      >
+        <Title level={2} style={{ margin: 0 }}>
+          Financial Reports
+        </Title>
         <Space>
           <Select
             placeholder="Filter by Project"
@@ -199,10 +309,16 @@ const Reports: React.FC = () => {
             prefix={<ProjectOutlined />}
           >
             {projects.map((p) => (
-              <Option key={p.id} value={p.id}>{p.name}</Option>
+              <Option key={p.id} value={p.id}>
+                {p.name}
+              </Option>
             ))}
           </Select>
-          <Button icon={<FileExcelOutlined />} onClick={exportToExcel} disabled={pivotData.length === 0}>
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={exportToExcel}
+            disabled={pivotData.length === 0}
+          >
             Export Excel
           </Button>
         </Space>
@@ -211,12 +327,7 @@ const Reports: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
           <Card bordered={false} className="report-stat-card billed">
-            <Statistic
-              title="TOTAL BILLED"
-              value={stats.totalBilled}
-              precision={0}
-              prefix="₹"
-            />
+            <Statistic title="TOTAL BILLED" value={stats.totalBilled} precision={0} prefix="₹" />
           </Card>
         </Col>
         <Col xs={24} sm={8}>
@@ -245,7 +356,7 @@ const Reports: React.FC = () => {
 
       <Card title="Unit-wise Pivot Ledger" bodyStyle={{ padding: 0 }}>
         <Table
-          columns={columns as any}
+          columns={columns as TableProps<PivotData>['columns']}
           dataSource={pivotData}
           loading={loading}
           pagination={{ pageSize: 20 }}

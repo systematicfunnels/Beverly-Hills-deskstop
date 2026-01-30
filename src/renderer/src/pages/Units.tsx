@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -13,11 +13,13 @@ import {
   Divider,
   Typography,
   Card,
-  Alert
+  Alert,
+  DividerProps
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
-import * as XLSX from 'xlsx'
 import { Unit, Project } from '@preload/types'
+import { readExcelFile } from '../utils/excelReader'
+import dayjs from 'dayjs'
 
 const { Title } = Typography
 const { Option } = Select
@@ -36,174 +38,183 @@ const Units: React.FC = () => {
   const [selectedWing, setSelectedWing] = useState<string | null>(null)
   const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
   const [selectedOccupancy, setSelectedOccupancy] = useState<string | null>(null)
-  const [areaRange, setAreaRange] = useState<[number | null, number | null]>([null, null])
   
+  // Default to current financial year
+  const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
+  const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
+  const [selectedFY, setSelectedFY] = useState<string | null>(defaultFY)
+
+  const [areaRange, setAreaRange] = useState<[number | null, number | null]>([null, null])
+
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
-  
+
   const [importData, setImportData] = useState<Record<string, unknown>[]>([])
   const [mappedPreview, setMappedPreview] = useState<ImportUnitPreview[]>([])
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [importProjectId, setImportProjectId] = useState<number | null>(null)
   const [ignoreEmptyUnits, setIgnoreEmptyUnits] = useState(true)
   const [defaultArea, setDefaultArea] = useState<number>(0)
-  
+
   const [form] = Form.useForm()
 
   // Helper function to map a single row to a Unit object
-  const mapRowToUnit = (row: Record<string, unknown>, projectId: number | null): ImportUnitPreview | null => {
-    // Unique ID for preview editing
-    const previewId = (row.__id as string) || Math.random().toString(36).substr(2, 9)
+  const mapRowToUnit = useCallback(
+    (row: Record<string, unknown>, projectId: number | null): ImportUnitPreview | null => {
+      // Unique ID for preview editing
+      const previewId = (row.__id as string) || Math.random().toString(36).substr(2, 9)
 
-    // Create a normalized version of the row with lowercase keys and trimmed values
-    const normalizedRow: Record<string, unknown> = {}
-    Object.keys(row).forEach((key) => {
-      const normalizedKey = String(key).toLowerCase().trim()
-      normalizedRow[normalizedKey] = row[key]
-    })
+      // Create a normalized version of the row with lowercase keys and trimmed values
+      const normalizedRow: Record<string, unknown> = {}
+      Object.keys(row).forEach((key) => {
+        const normalizedKey = String(key).toLowerCase().trim()
+        normalizedRow[normalizedKey] = row[key]
+      })
 
-    // Helper to find value by multiple possible keys
-    const getValue = (possibleKeys: string[]): unknown => {
-      for (const key of possibleKeys) {
-        if (
-          normalizedRow[key] !== undefined &&
-          normalizedRow[key] !== null &&
-          String(normalizedRow[key]).trim() !== ''
-        ) {
-          return normalizedRow[key]
+      // Helper to find value by multiple possible keys
+      const getValue = (possibleKeys: string[]): unknown => {
+        for (const key of possibleKeys) {
+          if (
+            normalizedRow[key] !== undefined &&
+            normalizedRow[key] !== null &&
+            String(normalizedRow[key]).trim() !== ''
+          ) {
+            return normalizedRow[key]
+          }
+        }
+        return undefined
+      }
+
+      // Auto-detect project if not selected
+      let effectiveProjectId = projectId
+      if (!effectiveProjectId) {
+        const projectName = String(getValue(['project', 'building', 'project name']) || '')
+          .trim()
+          .toLowerCase()
+        if (projectName) {
+          const matchedProject = projects.find((p) => p.name.toLowerCase() === projectName)
+          if (matchedProject) {
+            effectiveProjectId = matchedProject.id!
+          }
         }
       }
-      return undefined
-    }
 
-    // Auto-detect project if not selected
-    let effectiveProjectId = projectId
-    if (!effectiveProjectId) {
-      const projectName = String(getValue(['project', 'building', 'project name']) || '')
-        .trim()
-        .toLowerCase()
-      if (projectName) {
-        const matchedProject = projects.find((p) => p.name.toLowerCase() === projectName)
-        if (matchedProject) {
-          effectiveProjectId = matchedProject.id!
-        }
-      }
-    }
-
-    // Try to find Unit Number - expanded search
-    let unitNumber = String(
-      getValue([
-        'unit number',
-        'unit',
-        'unit_no',
-        'unitno',
-        'particulars',
-        'flat',
-        'flat no',
-        'flat_no',
-        'flat number',
-        'plot',
-        'plot no',
-        'plot_no',
-        'plot number',
-        'member code',
-        'id',
-        'shop',
-        'office'
-      ]) || ''
-    ).trim()
-
-    // If unitNumber is empty and we should ignore it, return null
-    if (!unitNumber && ignoreEmptyUnits) return null
-
-    // Try to find Owner Name - expanded search
-    let ownerName = String(
-      getValue([
-        'owner',
-        'name',
-        'owner name',
-        'ownername',
-        'to',
-        'respected sir / madam',
-        'member',
-        'member name',
-        'unit owner',
-        'unit owner name',
-        'customer',
-        'client'
-      ]) || ''
-    ).trim()
-
-    // Fallback 1: Extract unit from owner name if it looks like "Name D-3/403" or "Name (A-101)"
-    if (!unitNumber && ownerName) {
-      const unitPattern = /([A-Z][-/\s]?\d+([-/\s]\d+)?)/i
-      const match = ownerName.match(unitPattern)
-      if (match) {
-        unitNumber = match[0].trim()
-        ownerName = ownerName.replace(match[0], '').replace(/[()]/g, '').trim()
-      }
-    }
-
-    // Fallback 2: Scan ALL columns for anything that looks like a unit number if still empty
-    if (!unitNumber) {
-      const unitRegex = /^[A-Z][-/\s]?\d+([-/\s]\d+)?$/i
-      for (const key of Object.keys(normalizedRow)) {
-        const val = String(normalizedRow[key]).trim()
-        if (unitRegex.test(val)) {
-          unitNumber = val
-          break
-        }
-      }
-    }
-
-    // Final check for empty unit
-    if (!unitNumber && ignoreEmptyUnits) return null
-
-    // If unitNumber is still empty, we still want to show the row but allow manual entry
-    // We only skip if the row is completely empty or just header text
-    if (!unitNumber && !ownerName && Object.keys(row).length <= 1) return null
-    if (unitNumber && /^(particulars|unit|flat|plot|id|no|shop|office)$/i.test(unitNumber))
-      return null
-
-    const rawArea = Number(
-      String(
+      // Try to find Unit Number - expanded search
+      let unitNumber = String(
         getValue([
-          'area',
-          'sqft',
-          'area_sqft',
-          'area sqft',
-          'plot area sqft',
-          'sq.ft',
-          'sq-ft',
-          'builtup',
-          'built up'
-        ]) || '0'
-      ).replace(/[^0-9.]/g, '')
-    )
+          'unit number',
+          'unit',
+          'unit_no',
+          'unitno',
+          'particulars',
+          'flat',
+          'flat no',
+          'flat_no',
+          'flat number',
+          'plot',
+          'plot no',
+          'plot_no',
+          'plot number',
+          'member code',
+          'id',
+          'shop',
+          'office'
+        ]) || ''
+      ).trim()
 
-    return {
-      ...row,
-      previewId,
-      project_id: effectiveProjectId || 0,
-      unit_number: unitNumber,
-      wing:
+      // If unitNumber is empty and we should ignore it, return null
+      if (!unitNumber && ignoreEmptyUnits) return null
+
+      // Try to find Owner Name - expanded search
+      let ownerName = String(
+        getValue([
+          'owner',
+          'name',
+          'owner name',
+          'ownername',
+          'to',
+          'respected sir / madam',
+          'member',
+          'member name',
+          'unit owner',
+          'unit owner name',
+          'customer',
+          'client'
+        ]) || ''
+      ).trim()
+
+      // Fallback 1: Extract unit from owner name if it looks like "Name D-3/403" or "Name (A-101)"
+      if (!unitNumber && ownerName) {
+        const unitPattern = /([A-Z][-/\s]?\d+([-/\s]\d+)?)/i
+        const match = ownerName.match(unitPattern)
+        if (match) {
+          unitNumber = match[0].trim()
+          ownerName = ownerName.replace(match[0], '').replace(/[()]/g, '').trim()
+        }
+      }
+
+      // Fallback 2: Scan ALL columns for anything that looks like a unit number if still empty
+      if (!unitNumber) {
+        const unitRegex = /^[A-Z][-/\s]?\d+([-/\s]\d+)?$/i
+        for (const key of Object.keys(normalizedRow)) {
+          const val = String(normalizedRow[key]).trim()
+          if (unitRegex.test(val)) {
+            unitNumber = val
+            break
+          }
+        }
+      }
+
+      // Final check for empty unit
+      if (!unitNumber && ignoreEmptyUnits) return null
+
+      // If unitNumber is still empty, we still want to show the row but allow manual entry
+      // We only skip if the row is completely empty or just header text
+      if (!unitNumber && !ownerName && Object.keys(row).length <= 1) return null
+      if (unitNumber && /^(particulars|unit|flat|plot|id|no|shop|office)$/i.test(unitNumber))
+        return null
+
+      const rawArea = Number(
         String(
-          getValue(['wing', 'block', 'a', 'sector', 'wing/block', 'bldg', 'building']) || ''
-        ).trim() ||
-        unitNumber.match(/^[A-Z]/i)?.[0] ||
-        '',
-      unit_type: String(
-        getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
-          (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Residential')
-      ).trim(),
-      area_sqft: rawArea || defaultArea,
-      owner_name: ownerName || '',
-      status: String(getValue(['status', 'occupancy']) || 'Occupied').trim()
-    }
-  }
+          getValue([
+            'area',
+            'sqft',
+            'area_sqft',
+            'area sqft',
+            'plot area sqft',
+            'sq.ft',
+            'sq-ft',
+            'builtup',
+            'built up'
+          ]) || '0'
+        ).replace(/[^0-9.]/g, '')
+      )
+
+      return {
+        ...row,
+        previewId,
+        project_id: effectiveProjectId || 0,
+        unit_number: unitNumber,
+        wing:
+          String(
+            getValue(['wing', 'block', 'a', 'sector', 'wing/block', 'bldg', 'building']) || ''
+          ).trim() ||
+          unitNumber.match(/^[A-Z]/i)?.[0] ||
+          '',
+        unit_type: String(
+          getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
+            (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Residential')
+        ).trim(),
+        area_sqft: rawArea || defaultArea,
+        owner_name: ownerName || '',
+        status: String(getValue(['status', 'occupancy']) || 'Occupied').trim()
+      }
+    },
+    [projects, ignoreEmptyUnits, defaultArea]
+  )
 
   useEffect(() => {
     if (importData.length > 0) {
@@ -218,7 +229,7 @@ const Units: React.FC = () => {
     } else {
       setMappedPreview([])
     }
-  }, [importData, importProjectId, projects, ignoreEmptyUnits, defaultArea])
+  }, [importData, importProjectId, mapRowToUnit])
 
   const fetchData = async (): Promise<void> => {
     setLoading(true)
@@ -231,7 +242,7 @@ const Units: React.FC = () => {
       setFilteredUnits(unitsData)
       setProjects(projectsData)
       setSelectedRowKeys([])
-    } catch (error) {
+    } catch {
       message.error('Failed to fetch data')
     } finally {
       setLoading(false)
@@ -253,11 +264,28 @@ const Units: React.FC = () => {
       const matchOccupancy = !selectedOccupancy || unit.status === selectedOccupancy
       const matchMinArea = areaRange[0] === null || unit.area_sqft >= areaRange[0]
       const matchMaxArea = areaRange[1] === null || unit.area_sqft <= areaRange[1]
-      
-      return matchSearch && matchProject && matchWing && matchType && matchOccupancy && matchMinArea && matchMaxArea
+
+      return (
+        matchSearch &&
+        matchProject &&
+        matchWing &&
+        matchType &&
+        matchOccupancy &&
+        matchMinArea &&
+        matchMaxArea
+      )
     })
     setFilteredUnits(filtered)
-  }, [searchText, selectedProject, selectedWing, selectedUnitType, selectedOccupancy, areaRange, units])
+  }, [
+    searchText,
+    selectedProject,
+    selectedWing,
+    selectedUnitType,
+    selectedOccupancy,
+    selectedFY,
+    areaRange,
+    units
+  ])
 
   const wings = Array.from(new Set(units.map((u) => u.wing).filter(Boolean))).sort() as string[]
 
@@ -297,7 +325,7 @@ const Units: React.FC = () => {
           await window.api.units.bulkDelete(selectedRowKeys as number[])
           message.success(`Successfully deleted ${selectedRowKeys.length} units`)
           fetchData()
-        } catch (error) {
+        } catch {
           message.error('Failed to delete units')
         } finally {
           setLoading(false)
@@ -323,23 +351,27 @@ const Units: React.FC = () => {
       setImportProjectId(selectedProject)
     }
 
-    const reader = new FileReader()
-    reader.onload = async (e): Promise<void> => {
-      const data = e.target?.result
-      const workbook = XLSX.read(data, { type: 'binary' })
-      const sheetName = workbook.SheetNames[0]
-      const sheet = workbook.Sheets[sheetName]
-      const jsonData = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[]
+    try {
+      message.loading({ content: 'Reading Excel file...', key: 'excel_read' })
+      const jsonData = await readExcelFile(file)
 
       if (jsonData.length === 0) {
-        message.warning('No data found in the Excel file')
-        return
+        message.warning({ content: 'No data found in the Excel file', key: 'excel_read' })
+        return false
       }
 
+      message.success({ content: 'Excel file read successfully', key: 'excel_read' })
       setImportData(jsonData)
       setIsImportModalOpen(true)
+    } catch (error) {
+      console.error('Error reading Excel file:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      message.error({
+        content: `Failed to read Excel file: ${errorMessage}`,
+        key: 'excel_read',
+        duration: 5
+      })
     }
-    reader.readAsBinaryString(file)
     return false
   }
 
@@ -523,7 +555,11 @@ const Units: React.FC = () => {
           Units
         </Title>
         <Space wrap>
-          <Upload beforeUpload={handleImport} showUploadList={false}>
+          <Upload
+            beforeUpload={handleImport}
+            showUploadList={false}
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+          >
             <Button icon={<UploadOutlined />}>Import Excel</Button>
           </Upload>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -592,6 +628,23 @@ const Units: React.FC = () => {
             >
               <Option value="Occupied">Occupied</Option>
               <Option value="Vacant">Vacant</Option>
+            </Select>
+            <Select
+              placeholder="Financial Year"
+              style={{ width: 130 }}
+              allowClear
+              onChange={setSelectedFY}
+              value={selectedFY}
+            >
+              {Array.from({ length: 5 }, (_, i) => {
+                 const startYear = 2024 + i // Base year 2024
+                 const fy = `${startYear}-${(startYear + 1).toString().slice(2)}`
+                 return (
+                   <Option key={fy} value={fy}>
+                     {fy}
+                   </Option>
+                 )
+              })}
             </Select>
             <Space>
               <InputNumber
@@ -871,7 +924,11 @@ const Units: React.FC = () => {
           layout="vertical"
           initialValues={{ unit_type: 'Residential', status: 'Occupied' }}
         >
-          <Divider orientation={"left" as any} plain style={{ marginTop: 0 }}>
+          <Divider
+            orientation={'left' as DividerProps['orientation']}
+            plain
+            style={{ marginTop: 0 }}
+          >
             Unit Information
           </Divider>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -913,7 +970,7 @@ const Units: React.FC = () => {
             </Form.Item>
           </div>
 
-          <Divider orientation={"left" as any}>Owner Information</Divider>
+          <Divider orientation={'left' as DividerProps['orientation']}>Owner Information</Divider>
           <Form.Item name="owner_name" label="Owner Name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>

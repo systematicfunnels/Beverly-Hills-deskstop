@@ -4,6 +4,7 @@ export interface MaintenanceRate {
   id?: number
   project_id: number
   financial_year: string
+  unit_type?: string
   rate_per_sqft: number
   billing_frequency?: string
   created_at?: string
@@ -42,16 +43,33 @@ class MaintenanceRateService {
   public create(rate: MaintenanceRate): number {
     const result = dbService.run(
       `INSERT INTO maintenance_rates (
-        project_id, financial_year, rate_per_sqft, billing_frequency
-      ) VALUES (?, ?, ?, ?)`,
-      [rate.project_id, rate.financial_year, rate.rate_per_sqft, rate.billing_frequency || 'YEARLY']
+        project_id, financial_year, unit_type, rate_per_sqft, billing_frequency
+      ) VALUES (?, ?, ?, ?, ?)`,
+      [
+        rate.project_id,
+        rate.financial_year,
+        rate.unit_type || 'Flat',
+        rate.rate_per_sqft,
+        rate.billing_frequency || 'YEARLY'
+      ]
     )
     return result.lastInsertRowid as number
   }
 
   public update(id: number, rate: Partial<MaintenanceRate>): boolean {
+    const allowedColumns = [
+      'project_id',
+      'financial_year',
+      'unit_type',
+      'rate_per_sqft',
+      'billing_frequency'
+    ]
     const keys = Object.keys(rate).filter(
-      (key) => key !== 'id' && key !== 'project_name' && key !== 'created_at'
+      (key) =>
+        allowedColumns.includes(key) &&
+        key !== 'id' &&
+        key !== 'project_name' &&
+        key !== 'created_at'
     )
 
     if (keys.length === 0) return false
@@ -72,10 +90,13 @@ class MaintenanceRateService {
 
   // Slabs
   public getSlabs(rateId: number): MaintenanceSlab[] {
-    const slabs = dbService.query<any>(
-      'SELECT * FROM maintenance_slabs WHERE rate_id = ? ORDER BY due_date ASC',
-      [rateId]
-    )
+    const slabs = dbService.query<{
+      id: number
+      rate_id: number
+      due_date: string
+      discount_percentage: number
+      is_early_payment: number
+    }>('SELECT * FROM maintenance_slabs WHERE rate_id = ? ORDER BY due_date ASC', [rateId])
     return slabs.map((slab) => ({
       ...slab,
       is_early_payment: !!slab.is_early_payment

@@ -5,10 +5,10 @@ import {
   HomeOutlined,
   UserOutlined,
   FileTextOutlined,
-  DollarCircleOutlined,
   ArrowRightOutlined,
   ProjectOutlined
 } from '@ant-design/icons'
+import { IndianRupee } from 'lucide-react'
 import { Project } from '@preload/types'
 
 import dayjs from 'dayjs'
@@ -23,7 +23,7 @@ const Dashboard: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<number | undefined>(undefined)
   const [selectedUnitType, setSelectedUnitType] = useState<string | undefined>(undefined)
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>(undefined)
-  
+
   // Default to current financial year
   const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
   const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
@@ -39,12 +39,12 @@ const Dashboard: React.FC = () => {
   })
 
   useEffect(() => {
-    const fetchProjects = async () => {
+    const fetchProjects = async (): Promise<void> => {
       try {
         const data = await window.api.projects.getAll()
         setProjects(data)
-      } catch (error) {
-        console.error('Failed to fetch projects', error)
+      } catch {
+        // console.error('Failed to fetch projects', error)
       }
     }
     fetchProjects()
@@ -54,10 +54,15 @@ const Dashboard: React.FC = () => {
     const fetchDashboardData = async (): Promise<void> => {
       setLoading(true)
       try {
-        const data = await window.api.projects.getDashboardStats()
+        const data = await window.api.projects.getDashboardStats(
+          selectedProject,
+          selectedFY,
+          selectedUnitType,
+          selectedStatus
+        )
         setStats(data)
-      } catch (error) {
-        console.error('Dashboard data fetch failed', error)
+      } catch {
+        // console.error('Dashboard data fetch failed', error)
         message.error('Failed to load dashboard statistics')
       } finally {
         setLoading(false)
@@ -100,7 +105,7 @@ const Dashboard: React.FC = () => {
     {
       title: 'TOTAL OUTSTANDING',
       value: stats.totalOutstanding,
-      icon: <DollarCircleOutlined style={{ color: '#cf1322' }} />,
+      icon: <IndianRupee size={24} style={{ color: '#cf1322' }} />,
       color: '#cf1322',
       isCurrency: true,
       path: '/reports'
@@ -108,7 +113,7 @@ const Dashboard: React.FC = () => {
     {
       title: 'COLLECTED (FY)',
       value: stats.collectedThisYear,
-      icon: <DollarCircleOutlined style={{ color: '#3f8600' }} />,
+      icon: <IndianRupee size={24} style={{ color: '#3f8600' }} />,
       color: '#3f8600',
       isCurrency: true,
       path: '/payments'
@@ -117,7 +122,14 @@ const Dashboard: React.FC = () => {
 
   return (
     <div style={{ margin: '0 auto' }}>
-      <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div
+        style={{
+          marginBottom: 32,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end'
+        }}
+      >
         <div>
           <Title level={2} style={{ margin: 0, fontWeight: 700 }}>
             Dashboard
@@ -128,7 +140,9 @@ const Dashboard: React.FC = () => {
         </div>
         <Space size="middle" wrap>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>Project</Text>
+            <Text type="secondary" strong style={{ fontSize: 12 }}>
+              Project
+            </Text>
             <Select
               placeholder="All Projects"
               style={{ width: 180 }}
@@ -145,7 +159,9 @@ const Dashboard: React.FC = () => {
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>Financial Year</Text>
+            <Text type="secondary" strong style={{ fontSize: 12 }}>
+              Financial Year
+            </Text>
             <Select
               placeholder="Select Year"
               style={{ width: 120 }}
@@ -160,7 +176,9 @@ const Dashboard: React.FC = () => {
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>Unit Type</Text>
+            <Text type="secondary" strong style={{ fontSize: 12 }}>
+              Unit Type
+            </Text>
             <Select
               placeholder="All Types"
               style={{ width: 130 }}
@@ -176,7 +194,9 @@ const Dashboard: React.FC = () => {
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>Status</Text>
+            <Text type="secondary" strong style={{ fontSize: 12 }}>
+              Status
+            </Text>
             <Select
               placeholder="All Status"
               style={{ width: 120 }}
@@ -204,7 +224,13 @@ const Dashboard: React.FC = () => {
               <Skeleton loading={loading} active paragraph={{ rows: 1 }}>
                 <Statistic
                   title={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
                       <Text type="secondary" strong style={{ fontSize: 12 }}>
                         {card.title}
                       </Text>
@@ -214,6 +240,15 @@ const Dashboard: React.FC = () => {
                   value={card.value}
                   prefix={card.icon}
                   precision={card.isCurrency ? 2 : 0}
+                  formatter={
+                    card.isCurrency
+                      ? (val) =>
+                          `₹${Number(val).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}`
+                      : undefined
+                  }
                   valueStyle={{ color: card.color, fontWeight: 700 }}
                 />
               </Skeleton>

@@ -1,10 +1,20 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Project, Unit, MaintenanceLetter, MaintenanceRate, MaintenanceSlab, Payment, RepairResult } from './types'
+import {
+  Project,
+  Unit,
+  MaintenanceLetter,
+  MaintenanceRate,
+  MaintenanceSlab,
+  Payment,
+  RepairResult,
+  LetterAddOn
+} from './types'
 
 export * from './types'
 
 declare global {
   interface Window {
+    Buffer: typeof Buffer
     electron: ElectronAPI
     api: {
       projects: {
@@ -14,7 +24,12 @@ declare global {
         update: (id: number, project: Partial<Project>) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>
-        getDashboardStats: (projectId?: number) => Promise<{
+        getDashboardStats: (
+          projectId?: number,
+          financialYear?: string,
+          unitType?: string,
+          status?: string
+        ) => Promise<{
           projects: number
           units: number
           pendingUnits: number
@@ -31,7 +46,10 @@ declare global {
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>
         bulkCreate: (units: Unit[]) => Promise<boolean>
-        importLedger: (params: { projectId: number; rows: any[] }) => Promise<boolean>
+        importLedger: (params: {
+          projectId: number
+          rows: Record<string, unknown>[]
+        }) => Promise<boolean>
       }
       letters: {
         getAll: () => Promise<MaintenanceLetter[]>
@@ -46,7 +64,7 @@ declare global {
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>
         generatePdf: (id: number) => Promise<string>
-        getAddOns: (id: number) => Promise<any[]>
+        getAddOns: (id: number) => Promise<LetterAddOn[]>
       }
       rates: {
         getAll: () => Promise<MaintenanceRate[]>
@@ -72,9 +90,9 @@ declare global {
         repair: () => Promise<RepairResult>
       }
       settings: {
-        getAll: () => Promise<any[]>
-        update: (key: string, value: string) => Promise<any>
-        delete: (key: string) => Promise<any>
+        getAll: () => Promise<Record<string, unknown>[]>
+        update: (key: string, value: string) => Promise<Record<string, unknown>>
+        delete: (key: string) => Promise<Record<string, unknown>>
       }
     }
   }

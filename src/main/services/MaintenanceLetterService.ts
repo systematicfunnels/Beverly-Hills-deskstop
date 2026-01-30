@@ -137,7 +137,7 @@ class MaintenanceLetterService {
     // Table Content
     let currentY = tableY - 25
     const items: { desc: string; amt: number }[] = []
-    
+
     // Add Base Amount
     items.push({ desc: 'Annual Maintenance Charges', amt: letter.base_amount })
 
@@ -186,6 +186,30 @@ class MaintenanceLetterService {
     })
     page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 45, size: 10, font })
 
+    // Add UPI Scanner
+    const upiPath = 'c:\\Users\\heman_naocpgi\\Documents\\Beverly-Hills-deskstop\\resources\\UPI.jpeg'
+    if (fs.existsSync(upiPath)) {
+      try {
+        const upiImageBytes = fs.readFileSync(upiPath)
+        const upiImage = await pdfDoc.embedJpg(upiImageBytes)
+        // Draw image (100x100) to the right of bank details
+        page.drawImage(upiImage, {
+          x: 400,
+          y: currentY - 80,
+          width: 100,
+          height: 100
+        })
+        page.drawText('Scan to Pay', {
+          x: 420,
+          y: currentY - 95,
+          size: 10,
+          font: boldFont
+        })
+      } catch (error) {
+        console.error('Error embedding UPI image:', error)
+      }
+    }
+
     const pdfBytes = await pdfDoc.save()
     const pdfDir = path.join(app.getPath('userData'), 'maintenance_letters')
     if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir)
@@ -218,7 +242,7 @@ class MaintenanceLetterService {
     )
     if (!rate) {
       throw new Error(
-        `No maintenance rate found for this Project and Financial Year (${financialYear}). Please set the rate in Settings first.`
+        `No maintenance rate found for this Project and Financial Year (${financialYear}). Please go to 'Projects' page, click the 'Rates' button for your project, and add a rate for this financial year.`
       )
     }
 
@@ -240,11 +264,11 @@ class MaintenanceLetterService {
 
     if (units.length === 0) {
       // Diagnostic check: do rates exist for these unit types?
-      const existingRates = dbService.query(
+      const existingRates = dbService.query<{ unit_type: string }>(
         'SELECT unit_type FROM maintenance_rates WHERE project_id = ? AND financial_year = ?',
         [projectId, financialYear]
       )
-      const rateTypes = existingRates.map((r: any) => r.unit_type).join(', ')
+      const rateTypes = existingRates.map((r) => r.unit_type).join(', ')
 
       throw new Error(
         `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types (Flat, Bungalow, etc.).`
@@ -302,11 +326,14 @@ class MaintenanceLetterService {
         )
 
         let letterId = result.lastInsertRowid as number
-        
+
         // If it was an update, lastInsertRowid might not be the existing ID
         if (result.changes === 1 && result.lastInsertRowid === 0) {
-           const existing = dbService.get<{id: number}>('SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?', [unit.id, financialYear]);
-           letterId = existing!.id;
+          const existing = dbService.get<{ id: number }>(
+            'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+            [unit.id, financialYear]
+          )
+          letterId = existing!.id
         }
 
         // Clear old add-ons if it was an update

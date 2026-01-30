@@ -52,13 +52,25 @@ class UnitService {
   }
 
   public update(id: number, unit: Partial<Unit>): boolean {
-    const fields = Object.keys(unit)
-      .filter((key) => key !== 'id' && key !== 'project_name')
-      .map((key) => `${key} = ?`)
-      .join(', ')
-    const values = Object.keys(unit)
-      .filter((key) => key !== 'id' && key !== 'project_name')
-      .map((key) => unit[key as keyof Unit])
+    const allowedColumns = [
+      'project_id',
+      'unit_number',
+      'unit_type',
+      'wing',
+      'area_sqft',
+      'owner_name',
+      'contact_number',
+      'email',
+      'status'
+    ]
+    const keys = Object.keys(unit).filter(
+      (key) => allowedColumns.includes(key) && key !== 'id' && key !== 'project_name'
+    )
+
+    if (keys.length === 0) return false
+
+    const fields = keys.map((key) => `${key} = ?`).join(', ')
+    const values = keys.map((key) => unit[key as keyof Unit])
 
     const result = dbService.run(`UPDATE units SET ${fields} WHERE id = ?`, [...values, id])
     return result.changes > 0
@@ -68,7 +80,7 @@ class UnitService {
     return dbService.transaction(() => {
       try {
         console.log(`[UNIT_SERVICE] Starting deletion for unit ID: ${id}`)
-        
+
         // 1. Check if unit exists
         const unit = dbService.get('SELECT id FROM units WHERE id = ?', [id])
         if (!unit) {
@@ -82,11 +94,13 @@ class UnitService {
         // - payments
         // - receipts (via payments)
         // - add_ons (via maintenance_letters)
-        
+
         const result = dbService.run('DELETE FROM units WHERE id = ?', [id])
-        
+
         if (result.changes > 0) {
-          console.log(`[UNIT_SERVICE] Successfully deleted unit ${id} and all related data via cascade.`)
+          console.log(
+            `[UNIT_SERVICE] Successfully deleted unit ${id} and all related data via cascade.`
+          )
           return true
         } else {
           return false
@@ -102,7 +116,7 @@ class UnitService {
    * Complex ledger import that creates Units, Maintenance Letters, and Add-ons in one transaction.
    * Explodes one Excel row into multiple entities.
    */
-  public async importLedger(projectId: number, rows: any[]): Promise<boolean> {
+  public async importLedger(projectId: number, rows: Record<string, unknown>[]): Promise<boolean> {
     console.log(`[IMPORT] Starting ledger import for project ${projectId} with ${rows.length} rows`)
 
     return dbService.transaction(() => {
@@ -127,7 +141,7 @@ class UnitService {
             // Update owner name if it's different/missing
             if (row.owner_name) {
               dbService.run('UPDATE units SET owner_name = ? WHERE id = ?', [
-                row.owner_name,
+                row.owner_name as string,
                 unitId
               ])
             }
@@ -135,8 +149,8 @@ class UnitService {
             unitId = this.create({
               project_id: projectId,
               unit_number: unitNumber,
-              owner_name: row.owner_name || 'Unknown',
-              unit_type: row.unit_type || 'Bungalow',
+              owner_name: (row.owner_name as string) || 'Unknown',
+              unit_type: (row.unit_type as string) || 'Bungalow',
               area_sqft: Number(row.area_sqft) || 1000, // Default if missing
               status: 'Active'
             })
@@ -145,7 +159,12 @@ class UnitService {
           // B. Explode Year Columns into Maintenance Letters
           if (row.years && Array.isArray(row.years)) {
             for (const yearData of row.years) {
-              const { financial_year, base_amount, arrears, add_ons } = yearData
+              const { financial_year, base_amount, arrears, add_ons } = yearData as {
+                financial_year: string
+                base_amount: number
+                arrears?: number
+                add_ons?: { name: string; amount: number }[]
+              }
 
               if (Number(base_amount) <= 0 && (!add_ons || add_ons.length === 0) && !arrears)
                 continue
@@ -186,17 +205,17 @@ class UnitService {
 
               // Update final_amount with add-ons
               if (totalAddons > 0) {
-                dbService.run('UPDATE maintenance_letters SET final_amount = final_amount + ? WHERE id = ?', [
-                  totalAddons,
-                  letterId
-                ])
+                dbService.run(
+                  'UPDATE maintenance_letters SET final_amount = final_amount + ? WHERE id = ?',
+                  [totalAddons, letterId]
+                )
               }
             }
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error)
           console.error(`[IMPORT ERROR] Row ${index} failed:`, message)
-          throw new Error(`Row ${index} (${row.unit_number}): ${message}`)
+          throw new Error(`Row ${index} (${row.unit_number as string}): ${message}`)
         }
       }
       return true
