@@ -114,6 +114,30 @@ export function registerIpcHandlers(): void {
     return maintenanceLetterService.getAddOns(id)
   })
 
+  ipcMain.handle('get-all-addons', () => {
+    return maintenanceLetterService.getAllAddOns()
+  })
+
+  ipcMain.handle(
+    'add-letter-addon',
+    (
+      _,
+      params: {
+        unit_id: number
+        financial_year: string
+        addon_name: string
+        addon_amount: number
+        remarks?: string
+      }
+    ): boolean => {
+      return maintenanceLetterService.addAddOn(params)
+    }
+  )
+
+  ipcMain.handle('delete-letter-addon', (_, id: number): boolean => {
+    return maintenanceLetterService.deleteAddOn(id)
+  })
+
   ipcMain.handle('open-pdf', (_, filePath: string): void => {
     shell.openPath(filePath)
   })

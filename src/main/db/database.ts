@@ -305,9 +305,11 @@ class DatabaseService {
         }
 
         if (!columns.some((c) => c.name === 'unit_type'))
-          this.db.exec("ALTER TABLE units ADD COLUMN unit_type TEXT DEFAULT 'Flat'")
+          this.db.exec("ALTER TABLE units ADD COLUMN unit_type TEXT DEFAULT 'Bungalow'")
         if (!columns.some((c) => c.name === 'status'))
           this.db.exec("ALTER TABLE units ADD COLUMN status TEXT DEFAULT 'Active'")
+        if (!columns.some((c) => c.name === 'penalty'))
+          this.db.exec('ALTER TABLE units ADD COLUMN penalty REAL DEFAULT 0')
       }
 
       // 4. Migrate 'payments' table

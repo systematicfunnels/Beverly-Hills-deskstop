@@ -720,7 +720,7 @@ class MaintenanceBillService {
                     (bill.bungalow as string) || null,
                     (bill.owner_name as string) || 'Imported Owner',
                     (bill.area_sqft as number) || 0,
-                    (bill.unit_type as string) || 'Flat'
+                    (bill.unit_type as string) || 'Bungalow'
                   ]
                 )
                 unit = { id: result.lastInsertRowid as number }

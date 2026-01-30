@@ -271,7 +271,7 @@ class MaintenanceLetterService {
       const rateTypes = existingRates.map((r) => r.unit_type).join(', ')
 
       throw new Error(
-        `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types (Flat, Bungalow, etc.).`
+        `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types (Plot, Bungalow).`
       )
     }
 
@@ -382,6 +382,15 @@ class MaintenanceLetterService {
     return dbService.query<AddOn>('SELECT * FROM add_ons WHERE letter_id = ?', [letterId])
   }
 
+  public getAllAddOns(): (AddOn & { unit_id: number; financial_year: string; unit_number?: string; owner_name?: string; project_id?: number })[] {
+    return dbService.query<AddOn & { unit_id: number; financial_year: string; unit_number?: string; owner_name?: string; project_id?: number }>(`
+      SELECT a.*, l.unit_id, l.financial_year, l.project_id, u.unit_number, u.owner_name
+      FROM add_ons a
+      JOIN maintenance_letters l ON a.letter_id = l.id
+      JOIN units u ON l.unit_id = u.id
+    `)
+  }
+
   public delete(id: number): boolean {
     try {
       const result = dbService.run('DELETE FROM maintenance_letters WHERE id = ?', [id])
@@ -402,6 +411,94 @@ class MaintenanceLetterService {
         }
       }
       return allDeleted
+    })
+  }
+
+  public addAddOn(params: {
+    unit_id: number
+    financial_year: string
+    addon_name: string
+    addon_amount: number
+    remarks?: string
+  }): boolean {
+    return dbService.transaction(() => {
+      // 1. Find the letter
+      const letter = dbService.get<{ id: number; base_amount: number; arrears: number; discount_amount: number }>(
+        'SELECT id, base_amount, arrears, discount_amount FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+        [params.unit_id, params.financial_year]
+      )
+
+      if (!letter) {
+        throw new Error('Maintenance Letter not found for this Unit and Financial Year. Please generate the letter first.')
+      }
+
+      // 2. Insert Add-on
+      dbService.run(
+        'INSERT INTO add_ons (letter_id, addon_name, addon_amount, remarks) VALUES (?, ?, ?, ?)',
+        [letter.id, params.addon_name, params.addon_amount, params.remarks || '']
+      )
+
+      // 3. Recalculate Letter Total
+      const addOnsTotal =
+        dbService.get<{ total: number }>(
+          'SELECT SUM(addon_amount) as total FROM add_ons WHERE letter_id = ?',
+          [letter.id]
+        )?.total || 0
+
+      const finalAmount = Math.max(
+        0,
+        letter.base_amount + letter.arrears + addOnsTotal - letter.discount_amount
+      )
+
+      dbService.run('UPDATE maintenance_letters SET final_amount = ? WHERE id = ?', [
+        finalAmount,
+        letter.id
+      ])
+
+      return true
+    })
+  }
+
+  public deleteAddOn(id: number): boolean {
+    return dbService.transaction(() => {
+      // 1. Get Add-on to find letter_id
+      const addon = dbService.get<{ letter_id: number }>(
+        'SELECT letter_id FROM add_ons WHERE id = ?',
+        [id]
+      )
+
+      if (!addon) {
+        throw new Error('Add-on not found')
+      }
+
+      // 2. Delete Add-on
+      dbService.run('DELETE FROM add_ons WHERE id = ?', [id])
+
+      // 3. Recalculate Letter Total
+      const letter = dbService.get<{ base_amount: number; arrears: number; discount_amount: number }>(
+        'SELECT base_amount, arrears, discount_amount FROM maintenance_letters WHERE id = ?',
+        [addon.letter_id]
+      )
+
+      if (letter) {
+        const addOnsTotal =
+          dbService.get<{ total: number }>(
+            'SELECT SUM(addon_amount) as total FROM add_ons WHERE letter_id = ?',
+            [addon.letter_id]
+          )?.total || 0
+
+        const finalAmount = Math.max(
+          0,
+          letter.base_amount + letter.arrears + addOnsTotal - letter.discount_amount
+        )
+
+        dbService.run('UPDATE maintenance_letters SET final_amount = ? WHERE id = ?', [
+          finalAmount,
+          addon.letter_id
+        ])
+      }
+
+      return true
     })
   }
 }

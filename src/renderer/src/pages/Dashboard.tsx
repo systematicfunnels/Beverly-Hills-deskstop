@@ -186,11 +186,8 @@ const Dashboard: React.FC = () => {
               onChange={setSelectedUnitType}
               value={selectedUnitType}
             >
-              <Option value="Residential">Residential</Option>
-              <Option value="Commercial">Commercial</Option>
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
-              <Option value="Flat">Flat</Option>
             </Select>
           </Space>
           <Space direction="vertical" align="start">

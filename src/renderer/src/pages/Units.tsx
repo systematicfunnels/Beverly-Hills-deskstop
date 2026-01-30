@@ -193,11 +193,11 @@ const Units: React.FC = () => {
         unit_number: unitNumber,
         unit_type: String(
           getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
-            (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Residential')
+            (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Bungalow')
         ).trim(),
         area_sqft: rawArea || defaultArea,
         owner_name: ownerName || '',
-        status: String(getValue(['status', 'occupancy']) || 'Occupied').trim(),
+        status: String(getValue(['status', 'occupancy']) || 'Active').trim(),
         penalty: Number(getValue(['penalty', 'opening penalty', 'penalty amount']) || 0)
       }
     },
@@ -379,7 +379,6 @@ const Units: React.FC = () => {
           // In the wide format, we might have multiple penalty columns.
           // For now, let's look for common addon names in the row
           const possibleAddons = [
-            { key: 'Penalty', name: 'Penalty' },
             { key: 'NA Tax', name: 'NA Tax' },
             { key: 'N.A Tax', name: 'NA Tax' },
             { key: 'Cable', name: 'Cable' },
@@ -406,8 +405,8 @@ const Units: React.FC = () => {
           unit_number: row.unit_number,
           owner_name: row.owner_name,
           unit_type: row.unit_type,
-          wing: row.wing,
           area_sqft: row.area_sqft,
+          penalty: row.penalty,
           years: years
         }
       })
@@ -581,8 +580,8 @@ const Units: React.FC = () => {
               onChange={setStatusFilter}
               value={statusFilter}
             >
-              <Option value="Occupied">Occupied</Option>
-              <Option value="Vacant">Vacant</Option>
+              <Option value="Active">Active</Option>
+              <Option value="Inactive">Inactive</Option>
             </Select>
             <Select
               placeholder="Unit Type"
@@ -591,11 +590,8 @@ const Units: React.FC = () => {
               onChange={setSelectedUnitType}
               value={selectedUnitType}
             >
-              <Option value="Residential">Residential</Option>
-              <Option value="Commercial">Commercial</Option>
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
-              <Option value="Flat">Flat</Option>
             </Select>
             <Space>
               <InputNumber
@@ -770,9 +766,8 @@ const Units: React.FC = () => {
                         }
                         style={{ width: '100%' }}
                       >
-                        <Option value="Residential">Residential</Option>
-                        <Option value="Commercial">Commercial</Option>
                         <Option value="Plot">Plot</Option>
+                        <Option value="Bungalow">Bungalow</Option>
                       </Select>
                     )
                   },
@@ -803,8 +798,8 @@ const Units: React.FC = () => {
                         onChange={(val) => handlePreviewCellChange(record.previewId, 'status', val)}
                         style={{ width: '100%' }}
                       >
-                        <Option value="Occupied">Occupied</Option>
-                        <Option value="Vacant">Vacant</Option>
+                        <Option value="Active">Active</Option>
+                        <Option value="Inactive">Inactive</Option>
                       </Select>
                     )
                   },
@@ -870,7 +865,7 @@ const Units: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ unit_type: 'Residential', status: 'Occupied' }}
+          initialValues={{ unit_type: 'Bungalow', status: 'Occupied' }}
         >
           <Divider
             orientation={'left' as DividerProps['orientation']}
@@ -899,9 +894,8 @@ const Units: React.FC = () => {
             </Form.Item>
             <Form.Item name="unit_type" label="Unit Type" rules={[{ required: true }]}>
               <Select>
-                <Option value="Residential">Residential</Option>
-                <Option value="Commercial">Commercial</Option>
                 <Option value="Plot">Plot</Option>
+                <Option value="Bungalow">Bungalow</Option>
               </Select>
             </Form.Item>
             <Form.Item name="area_sqft" label="Area (sqft)" rules={[{ required: true }]}>
@@ -918,8 +912,8 @@ const Units: React.FC = () => {
             </Form.Item>
             <Form.Item name="status" label="Status" rules={[{ required: true }]}>
               <Select>
-                <Option value="Occupied">Occupied</Option>
-                <Option value="Vacant">Vacant</Option>
+                <Option value="Active">Active</Option>
+                <Option value="Inactive">Inactive</Option>
               </Select>
             </Form.Item>
           </div>

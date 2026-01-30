@@ -40,7 +40,16 @@ const api = {
     delete: (id: number) => ipcRenderer.invoke('delete-letter', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-letters', ids),
     generatePdf: (id: number) => ipcRenderer.invoke('generate-letter-pdf', id),
-    getAddOns: (id: number) => ipcRenderer.invoke('get-letter-addons', id)
+    getAddOns: (id: number) => ipcRenderer.invoke('get-letter-addons', id),
+    getAllAddOns: () => ipcRenderer.invoke('get-all-addons'),
+    addAddOn: (params: {
+      unit_id: number
+      financial_year: string
+      addon_name: string
+      addon_amount: number
+      remarks?: string
+    }) => ipcRenderer.invoke('add-letter-addon', params),
+    deleteAddOn: (id: number) => ipcRenderer.invoke('delete-letter-addon', id)
   },
   rates: {
     getAll: () => ipcRenderer.invoke('get-rates'),

@@ -65,6 +65,15 @@ declare global {
         bulkDelete: (ids: number[]) => Promise<boolean>
         generatePdf: (id: number) => Promise<string>
         getAddOns: (id: number) => Promise<LetterAddOn[]>
+        getAllAddOns: () => Promise<(LetterAddOn & { unit_id: number; financial_year: string; unit_number?: string; owner_name?: string; project_id?: number })[]>
+        addAddOn: (params: {
+          unit_id: number
+          financial_year: string
+          addon_name: string
+          addon_amount: number
+          remarks?: string
+        }) => Promise<boolean>
+        deleteAddOn: (id: number) => Promise<boolean>
       }
       rates: {
         getAll: () => Promise<MaintenanceRate[]>

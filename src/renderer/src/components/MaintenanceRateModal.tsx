@@ -138,7 +138,7 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       title: 'Unit Type',
       dataIndex: 'unit_type',
       key: 'unit_type',
-      render: (val: string): React.ReactNode => <Tag>{val || 'Flat'}</Tag>
+      render: (val: string): React.ReactNode => <Tag>{val || 'Bungalow'}</Tag>
     },
     {
       title: 'Rate (per Sqft)',
@@ -227,12 +227,10 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
             >
               <Input placeholder="2024-25" style={{ width: 100 }} />
             </Form.Item>
-            <Form.Item name="unit_type" label="Type" initialValue="Flat">
+            <Form.Item name="unit_type" label="Type" initialValue="Bungalow">
               <Select style={{ width: 120 }}>
-                <Option value="Flat">Flat</Option>
+                <Option value="Plot">Plot</Option>
                 <Option value="Bungalow">Bungalow</Option>
-                <Option value="Shop">Shop</Option>
-                <Option value="Office">Office</Option>
               </Select>
             </Form.Item>
             <Form.Item

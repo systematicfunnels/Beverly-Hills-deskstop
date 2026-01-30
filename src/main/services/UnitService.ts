@@ -10,6 +10,7 @@ export interface Unit {
   contact_number?: string
   email?: string
   status?: string
+  penalty?: number
   project_name?: string // Joined field
 }
 
@@ -33,17 +34,18 @@ class UnitService {
   public create(unit: Unit): number {
     const result = dbService.run(
       `INSERT INTO units (
-        project_id, unit_number, unit_type, area_sqft, owner_name, contact_number, email, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        project_id, unit_number, unit_type, area_sqft, owner_name, contact_number, email, status, penalty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unit.project_id,
         unit.unit_number,
-        unit.unit_type || 'Flat',
+        unit.unit_type || 'Bungalow',
         unit.area_sqft,
         unit.owner_name,
         unit.contact_number,
         unit.email,
-        unit.status || 'Active'
+        unit.status || 'Active',
+        unit.penalty || 0
       ]
     )
     return result.lastInsertRowid as number
@@ -58,7 +60,8 @@ class UnitService {
       'owner_name',
       'contact_number',
       'email',
-      'status'
+      'status',
+      'penalty'
     ]
     const keys = Object.keys(unit).filter(
       (key) => allowedColumns.includes(key) && key !== 'id' && key !== 'project_name'
@@ -142,6 +145,13 @@ class UnitService {
                 unitId
               ])
             }
+            // Update penalty if provided
+            if (row.penalty !== undefined) {
+              dbService.run('UPDATE units SET penalty = ? WHERE id = ?', [
+                Number(row.penalty) || 0,
+                unitId
+              ])
+            }
           } else {
             unitId = this.create({
               project_id: projectId,
@@ -149,7 +159,8 @@ class UnitService {
               owner_name: (row.owner_name as string) || 'Unknown',
               unit_type: (row.unit_type as string) || 'Bungalow',
               area_sqft: Number(row.area_sqft) || 1000, // Default if missing
-              status: 'Active'
+              status: 'Active',
+              penalty: Number(row.penalty) || 0
             })
           }
 

@@ -48,7 +48,7 @@ class MaintenanceRateService {
       [
         rate.project_id,
         rate.financial_year,
-        rate.unit_type || 'Flat',
+        rate.unit_type || 'Bungalow',
         rate.rate_per_sqft,
         rate.billing_frequency || 'YEARLY'
       ]

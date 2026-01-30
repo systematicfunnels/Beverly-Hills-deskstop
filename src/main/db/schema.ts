@@ -21,11 +21,12 @@ CREATE TABLE IF NOT EXISTS units (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
   unit_number TEXT NOT NULL,
-  unit_type TEXT DEFAULT 'Flat', -- Flat, Bungalow
+  unit_type TEXT DEFAULT 'Bungalow', -- Plot, Bungalow
   area_sqft REAL NOT NULL,
   owner_name TEXT NOT NULL,
   contact_number TEXT,
   email TEXT,
+  penalty REAL DEFAULT 0,
   status TEXT DEFAULT 'Active', -- Active, Inactive
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS maintenance_rates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
   financial_year TEXT NOT NULL, -- e.g. 2024-25
-  unit_type TEXT DEFAULT 'Flat', -- Aligned with ER
+  unit_type TEXT DEFAULT 'Bungalow', -- Aligned with ER
   rate_per_sqft REAL NOT NULL,
   billing_frequency TEXT DEFAULT 'YEARLY',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
