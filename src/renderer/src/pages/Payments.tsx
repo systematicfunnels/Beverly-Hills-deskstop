@@ -263,6 +263,12 @@ const Payments: React.FC = () => {
       render: (mode: string) => <Tag color="blue">{mode}</Tag>
     },
     {
+      title: 'Ref #',
+      dataIndex: 'cheque_number',
+      key: 'cheque_number',
+      render: (text: string) => text || '-'
+    },
+    {
       title: 'Against',
       dataIndex: 'financial_year',
       key: 'financial_year',
@@ -326,6 +332,11 @@ const Payments: React.FC = () => {
           Payments & Receipts
         </Title>
         <Space>
+          {selectedRowKeys.length > 0 && (
+            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+              Delete Selected ({selectedRowKeys.length})
+            </Button>
+          )}
           <Button icon={<TableOutlined />} onClick={handleBulkAdd}>
             Bulk Record
           </Button>
@@ -343,7 +354,7 @@ const Payments: React.FC = () => {
               allowClear
               onChange={(e) => setSearchText(e.target.value)}
               onSearch={setSearchText}
-              style={{ width: 300 }}
+              style={{ width: 250 }}
               enterButton
               suffix={null}
             />
@@ -359,17 +370,6 @@ const Payments: React.FC = () => {
                   {s.name}
                 </Option>
               ))}
-            </Select>
-            <Select
-              placeholder="Mode"
-              style={{ width: 180 }}
-              allowClear
-              onChange={setSelectedMode}
-              value={selectedMode}
-            >
-              <Option value="Transfer">Bank Transfer / UPI</Option>
-              <Option value="Cheque">Cheque</Option>
-              <Option value="Cash">Cash</Option>
             </Select>
             <Select
               placeholder="Financial Year"
@@ -392,11 +392,17 @@ const Payments: React.FC = () => {
                 </Option>
               )}
             </Select>
-            {selectedRowKeys.length > 0 && (
-              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-                Delete Selected ({selectedRowKeys.length})
-              </Button>
-            )}
+            <Select
+              placeholder="Mode"
+              style={{ width: 180 }}
+              allowClear
+              onChange={setSelectedMode}
+              value={selectedMode}
+            >
+              <Option value="Transfer">Bank Transfer / UPI</Option>
+              <Option value="Cheque">Cheque</Option>
+              <Option value="Cash">Cash</Option>
+            </Select>
           </Space>
         </div>
 
@@ -430,116 +436,128 @@ const Payments: React.FC = () => {
           <Divider orientation={'left' as DividerProps['orientation']} style={{ marginTop: 0 }}>
             Unit Details
           </Divider>
-          <Form.Item name="unit_id" label="Select Unit" rules={[{ required: true }]}>
-            <Select
-              showSearch
-              placeholder="Search Unit"
-              filterOption={(input, option) =>
-                String(option?.children ?? '')
-                  .toLowerCase()
-                  .includes(input.toLowerCase())
-              }
-              onChange={() => {
-                form.setFieldsValue({ letter_id: undefined })
-              }}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <Form.Item
+              name="unit_id"
+              label="Select Unit"
+              rules={[{ required: true }]}
+              style={{ gridColumn: 'span 2' }}
             >
-              {units.map((u) => (
-                <Option key={u.id} value={u.id}>
-                  {u.project_name} - {u.unit_number} ({u.owner_name})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+              <Select
+                showSearch
+                placeholder="Search Unit"
+                filterOption={(input, option) =>
+                  String(option?.children ?? '')
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
+                }
+                onChange={() => {
+                  form.setFieldsValue({ letter_id: undefined })
+                }}
+              >
+                {units.map((u) => (
+                  <Option key={u.id} value={u.id}>
+                    {u.project_name} - {u.unit_number} ({u.owner_name})
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
 
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, currentValues) =>
-              prevValues.unit_id !== currentValues.unit_id ||
-              prevValues.letter_id !== currentValues.letter_id
-            }
-          >
-            {({ getFieldValue }) => {
-              const unitId = getFieldValue('unit_id')
-              const letterId = getFieldValue('letter_id')
-              const unitLetters = letters.filter((l) => l.unit_id === unitId)
-              const selectedLetter = unitLetters.find((l) => l.id === letterId)
+            <Form.Item
+              noStyle
+              shouldUpdate={(prevValues, currentValues) =>
+                prevValues.unit_id !== currentValues.unit_id ||
+                prevValues.letter_id !== currentValues.letter_id
+              }
+            >
+              {({ getFieldValue }) => {
+                const unitId = getFieldValue('unit_id')
+                const letterId = getFieldValue('letter_id')
+                const unitLetters = letters.filter((l) => l.unit_id === unitId)
+                const selectedLetter = unitLetters.find((l) => l.id === letterId)
 
-              return (
-                <>
-                  <Form.Item
-                    name="letter_id"
-                    label="Against Maintenance Letter"
-                    extra={
-                      unitLetters.length === 0 ? 'No maintenance letters found for this unit' : ''
-                    }
-                  >
-                    <Select
-                      placeholder="Select Maintenance Letter"
-                      allowClear
-                      disabled={unitLetters.length === 0}
-                      onChange={(val) => {
-                        if (val) {
-                          const letter = unitLetters.find((l) => l.id === val)
-                          if (letter) form.setFieldsValue({ financial_year: letter.financial_year })
-                        }
-                      }}
+                return (
+                  <>
+                    <Form.Item
+                      name="letter_id"
+                      label="Against Maintenance Letter"
+                      extra={
+                        unitLetters.length === 0 ? 'No maintenance letters found for this unit' : ''
+                      }
+                      style={{ gridColumn: 'span 1' }}
                     >
-                      {unitLetters.map((letter) => (
-                        <Option key={letter.id} value={letter.id}>
-                          {letter.financial_year} - ₹{letter.final_amount}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-
-                  <Form.Item
-                    name="financial_year"
-                    label="Against Financial Year"
-                    rules={[{ required: true, message: 'Please select a financial year' }]}
-                  >
-                    <Select placeholder="Select Financial Year" disabled={!!selectedLetter}>
-                      {/* Generate some common FY options or fetch from letters */}
-                      {Array.from(new Set(letters.map((l) => l.financial_year)))
-                        .sort()
-                        .reverse()
-                        .map((fy) => (
-                          <Option key={fy} value={fy}>
-                            {fy}
+                      <Select
+                        placeholder="Select Maintenance Letter"
+                        allowClear
+                        disabled={unitLetters.length === 0}
+                        onChange={(val) => {
+                          if (val) {
+                            const letter = unitLetters.find((l) => l.id === val)
+                            if (letter)
+                              form.setFieldsValue({ financial_year: letter.financial_year })
+                          }
+                        }}
+                      >
+                        {unitLetters.map((letter) => (
+                          <Option key={letter.id} value={letter.id}>
+                            {letter.financial_year} - ₹{letter.final_amount}
                           </Option>
                         ))}
-                      {/* Add current/next FY as options if not in letters */}
-                      <Option value="2024-25">2024-25</Option>
-                      <Option value="2025-26">2025-26</Option>
-                      <Option value="2026-27">2026-27</Option>
-                    </Select>
-                  </Form.Item>
-                </>
-              )
-            }}
-          </Form.Item>
+                      </Select>
+                    </Form.Item>
+
+                    <Form.Item
+                      name="financial_year"
+                      label="Against Financial Year"
+                      rules={[{ required: true, message: 'Please select a financial year' }]}
+                      style={{ gridColumn: 'span 1' }}
+                    >
+                      <Select placeholder="Select Financial Year" disabled={!!selectedLetter}>
+                        {/* Generate some common FY options or fetch from letters */}
+                        {Array.from(new Set(letters.map((l) => l.financial_year)))
+                          .sort()
+                          .reverse()
+                          .map((fy) => (
+                            <Option key={fy} value={fy}>
+                              {fy}
+                            </Option>
+                          ))}
+                        {/* Add current/next FY as options if not in letters */}
+                        <Option value="2024-25">2024-25</Option>
+                        <Option value="2025-26">2025-26</Option>
+                        <Option value="2026-27">2026-27</Option>
+                      </Select>
+                    </Form.Item>
+                  </>
+                )
+              }}
+            </Form.Item>
+          </div>
 
           <Divider orientation={'left' as DividerProps['orientation']}>Payment Details</Divider>
-          <Form.Item name="payment_date" label="Payment Date" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="payment_amount" label="Amount (₹)" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <Form.Item name="payment_date" label="Payment Date" rules={[{ required: true }]}>
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="payment_amount" label="Amount (₹)" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
 
-          <Form.Item name="payment_mode" label="Payment Mode" rules={[{ required: true }]}>
-            <Select>
-              <Option value="Transfer">Bank Transfer / UPI</Option>
-              <Option value="Cheque">Cheque</Option>
-              <Option value="Cash">Cash</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="reference_number" label="Ref # (UTR/Cheque No)">
-            <Input />
-          </Form.Item>
+            <Form.Item name="payment_mode" label="Payment Mode" rules={[{ required: true }]}>
+              <Select>
+                <Option value="Transfer">Bank Transfer / UPI</Option>
+                <Option value="Cheque">Cheque</Option>
+                <Option value="Cash">Cash</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item name="reference_number" label="Ref # (UTR/Cheque No)">
+              <Input />
+            </Form.Item>
 
-          <Form.Item name="remarks" label="Remarks">
-            <Input.TextArea rows={2} />
-          </Form.Item>
+            <Form.Item name="remarks" label="Remarks" style={{ gridColumn: 'span 2' }}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
       <Modal

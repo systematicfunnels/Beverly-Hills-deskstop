@@ -49,7 +49,6 @@ const Billing: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<string | null>(defaultFY)
 
   const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
-  const [selectedWing, setSelectedWing] = useState<string | null>(null)
   const [amountRange, setAmountRange] = useState<[number | null, number | null]>([null, null])
   const [dueDateRange, setDueDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
     null,
@@ -213,7 +212,6 @@ const Billing: React.FC = () => {
       (selectedStatus === 'Pending' && letter.status === 'Pending')
 
     const matchUnitType = !selectedUnitType || letter.unit_type === selectedUnitType
-    const matchWing = !selectedWing || letter.wing === selectedWing
 
     const matchMinAmount = amountRange[0] === null || letter.final_amount >= amountRange[0]
     const matchMaxAmount = amountRange[1] === null || letter.final_amount <= amountRange[1]
@@ -230,7 +228,6 @@ const Billing: React.FC = () => {
       matchSearch &&
       matchStatus &&
       matchUnitType &&
-      matchWing &&
       matchMinAmount &&
       matchMaxAmount &&
       matchMinDueDate &&
@@ -241,7 +238,6 @@ const Billing: React.FC = () => {
   const uniqueYears = Array.from(new Set(letters.map((l) => l.financial_year)))
     .sort()
     .reverse()
-  const uniqueWings = Array.from(new Set(letters.map((l) => l.wing).filter(Boolean))).sort()
 
   const columns = [
     {
@@ -250,12 +246,6 @@ const Billing: React.FC = () => {
       key: 'unit_number',
       sorter: (a: MaintenanceLetter, b: MaintenanceLetter) =>
         (a.unit_number || '').localeCompare(b.unit_number || '')
-    },
-    {
-      title: 'Wing',
-      dataIndex: 'wing',
-      key: 'wing',
-      width: 80
     },
     {
       title: 'Type',
@@ -301,6 +291,12 @@ const Billing: React.FC = () => {
       align: 'right' as const,
       render: (val: number) => <strong>₹{(val || 0).toLocaleString()}</strong>,
       sorter: (a: MaintenanceLetter, b: MaintenanceLetter) => a.final_amount - b.final_amount
+    },
+    {
+      title: 'Letter Date',
+      dataIndex: 'letter_date',
+      key: 'letter_date',
+      render: (date: string) => date || '-'
     },
     {
       title: 'Due Date',
@@ -430,19 +426,6 @@ const Billing: React.FC = () => {
               <Option value="Bungalow">Bungalow</Option>
               <Option value="Flat">Flat</Option>
             </Select>
-            <Select
-              placeholder="Wing"
-              style={{ width: 120 }}
-              allowClear
-              onChange={setSelectedWing}
-              value={selectedWing}
-            >
-              {uniqueWings.map((wing) => (
-                <Option key={wing} value={wing}>
-                  {wing}
-                </Option>
-              ))}
-            </Select>
           </Space>
 
           <Space wrap size="middle">
@@ -503,10 +486,10 @@ const Billing: React.FC = () => {
           form={form}
           layout="vertical"
           initialValues={{
-          letter_date: dayjs(),
-          due_date: dayjs().add(15, 'day'),
-          financial_year: selectedYear || defaultFY
-        }}
+            letter_date: dayjs(),
+            due_date: dayjs().add(15, 'day'),
+            financial_year: selectedYear || defaultFY
+          }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Form.Item
@@ -528,6 +511,7 @@ const Billing: React.FC = () => {
               name="financial_year"
               label="Financial Year (e.g., 2024-25)"
               rules={[{ required: true, message: 'Please enter financial year' }]}
+              style={{ gridColumn: 'span 2' }}
             >
               <Input placeholder="2024-25" />
             </Form.Item>

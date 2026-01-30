@@ -198,7 +198,8 @@ const Reports: React.FC = () => {
       fixed: 'left' as const,
       width: 150,
       ellipsis: true,
-      sorter: (a: PivotData, b: PivotData) => (a.project_name || '').localeCompare(b.project_name || '')
+      sorter: (a: PivotData, b: PivotData) =>
+        (a.project_name || '').localeCompare(b.project_name || '')
     },
     {
       title: 'Unit',
@@ -241,7 +242,9 @@ const Reports: React.FC = () => {
                 : 0
 
             return (
-              <Tooltip title={`Billed: ₹${billed.toLocaleString()} | Paid: ₹${paid.toLocaleString()}`}>
+              <Tooltip
+                title={`Billed: ₹${billed.toLocaleString()} | Paid: ₹${paid.toLocaleString()}`}
+              >
                 <Text type={val > 0 ? 'danger' : 'success'} style={{ fontSize: '12px' }}>
                   {val > 0 && <ExclamationCircleOutlined style={{ marginRight: 4 }} />}
                   {val > 0 ? `₹${val.toLocaleString()}` : '-'}
@@ -301,7 +304,7 @@ const Reports: React.FC = () => {
         </Title>
         <Space>
           <Select
-            placeholder="Filter by Project"
+            placeholder="Project"
             style={{ width: 250 }}
             allowClear
             onChange={setSelectedProject}

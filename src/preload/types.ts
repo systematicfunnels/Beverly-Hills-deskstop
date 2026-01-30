@@ -23,11 +23,11 @@ export interface Unit {
   area_sqft: number
   unit_type?: string
   floor?: number
-  wing?: string
   project_name?: string
   status?: string
   contact_number?: string
   email?: string
+  penalty?: number
 }
 
 export interface MaintenanceLetter {
@@ -45,7 +45,6 @@ export interface MaintenanceLetter {
   owner_name?: string
   project_name?: string
   unit_type?: string
-  wing?: string
   is_paid?: boolean
   add_ons_total?: number
 }

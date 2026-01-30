@@ -5,7 +5,6 @@ export interface Unit {
   project_id: number
   unit_number: string
   unit_type?: string
-  wing?: string
   area_sqft: number
   owner_name: string
   contact_number?: string
@@ -34,13 +33,12 @@ class UnitService {
   public create(unit: Unit): number {
     const result = dbService.run(
       `INSERT INTO units (
-        project_id, unit_number, unit_type, wing, area_sqft, owner_name, contact_number, email, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        project_id, unit_number, unit_type, area_sqft, owner_name, contact_number, email, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unit.project_id,
         unit.unit_number,
         unit.unit_type || 'Flat',
-        unit.wing,
         unit.area_sqft,
         unit.owner_name,
         unit.contact_number,
@@ -56,7 +54,6 @@ class UnitService {
       'project_id',
       'unit_number',
       'unit_type',
-      'wing',
       'area_sqft',
       'owner_name',
       'contact_number',

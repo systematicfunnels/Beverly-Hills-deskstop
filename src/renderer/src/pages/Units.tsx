@@ -19,7 +19,6 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { Unit, Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
-import dayjs from 'dayjs'
 
 const { Title } = Typography
 const { Option } = Select
@@ -35,14 +34,8 @@ const Units: React.FC = () => {
   const [filteredUnits, setFilteredUnits] = useState<Unit[]>([])
   const [searchText, setSearchText] = useState('')
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
-  const [selectedWing, setSelectedWing] = useState<string | null>(null)
   const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
-  const [selectedOccupancy, setSelectedOccupancy] = useState<string | null>(null)
-  
-  // Default to current financial year
-  const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
-  const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
-  const [selectedFY, setSelectedFY] = useState<string | null>(defaultFY)
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
 
   const [areaRange, setAreaRange] = useState<[number | null, number | null]>([null, null])
 
@@ -198,19 +191,14 @@ const Units: React.FC = () => {
         previewId,
         project_id: effectiveProjectId || 0,
         unit_number: unitNumber,
-        wing:
-          String(
-            getValue(['wing', 'block', 'a', 'sector', 'wing/block', 'bldg', 'building']) || ''
-          ).trim() ||
-          unitNumber.match(/^[A-Z]/i)?.[0] ||
-          '',
         unit_type: String(
           getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
             (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Residential')
         ).trim(),
         area_sqft: rawArea || defaultArea,
         owner_name: ownerName || '',
-        status: String(getValue(['status', 'occupancy']) || 'Occupied').trim()
+        status: String(getValue(['status', 'occupancy']) || 'Occupied').trim(),
+        penalty: Number(getValue(['penalty', 'opening penalty', 'penalty amount']) || 0)
       }
     },
     [projects, ignoreEmptyUnits, defaultArea]
@@ -259,35 +247,15 @@ const Units: React.FC = () => {
         unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
         unit.owner_name.toLowerCase().includes(searchText.toLowerCase())
       const matchProject = !selectedProject || unit.project_id === selectedProject
-      const matchWing = !selectedWing || unit.wing === selectedWing
       const matchType = !selectedUnitType || unit.unit_type === selectedUnitType
-      const matchOccupancy = !selectedOccupancy || unit.status === selectedOccupancy
+      const matchStatus = !statusFilter || unit.status === statusFilter
       const matchMinArea = areaRange[0] === null || unit.area_sqft >= areaRange[0]
       const matchMaxArea = areaRange[1] === null || unit.area_sqft <= areaRange[1]
 
-      return (
-        matchSearch &&
-        matchProject &&
-        matchWing &&
-        matchType &&
-        matchOccupancy &&
-        matchMinArea &&
-        matchMaxArea
-      )
+      return matchSearch && matchProject && matchType && matchStatus && matchMinArea && matchMaxArea
     })
     setFilteredUnits(filtered)
-  }, [
-    searchText,
-    selectedProject,
-    selectedWing,
-    selectedUnitType,
-    selectedOccupancy,
-    selectedFY,
-    areaRange,
-    units
-  ])
-
-  const wings = Array.from(new Set(units.map((u) => u.wing).filter(Boolean))).sort() as string[]
+  }, [searchText, selectedProject, selectedUnitType, statusFilter, areaRange, units])
 
   const handleAdd = (): void => {
     setEditingUnit(null)
@@ -491,12 +459,6 @@ const Units: React.FC = () => {
       sorter: (a: Unit, b: Unit) => a.unit_number.localeCompare(b.unit_number)
     },
     {
-      title: 'Wing',
-      dataIndex: 'wing',
-      key: 'wing',
-      sorter: (a: Unit, b: Unit) => (a.wing || '').localeCompare(b.wing || '')
-    },
-    {
       title: 'Type',
       dataIndex: 'unit_type',
       key: 'unit_type',
@@ -509,11 +471,25 @@ const Units: React.FC = () => {
       sorter: (a: Unit, b: Unit) => a.owner_name.localeCompare(b.owner_name)
     },
     {
+      title: 'Contact',
+      dataIndex: 'contact_number',
+      key: 'contact_number',
+      render: (text: string) => text || '-'
+    },
+    {
       title: 'Area (sqft)',
       dataIndex: 'area_sqft',
       key: 'area_sqft',
       align: 'right' as const,
       sorter: (a: Unit, b: Unit) => a.area_sqft - b.area_sqft
+    },
+    {
+      title: 'Penalty',
+      dataIndex: 'penalty',
+      key: 'penalty',
+      align: 'right' as const,
+      render: (val: number) => (val ? `₹${val}` : '-'),
+      sorter: (a: Unit, b: Unit) => (a.penalty || 0) - (b.penalty || 0)
     },
     {
       title: 'Status',
@@ -555,6 +531,11 @@ const Units: React.FC = () => {
           Units
         </Title>
         <Space wrap>
+          {selectedRowKeys.length > 0 && (
+            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+              Delete Selected ({selectedRowKeys.length})
+            </Button>
+          )}
           <Upload
             beforeUpload={handleImport}
             showUploadList={false}
@@ -594,17 +575,14 @@ const Units: React.FC = () => {
               ))}
             </Select>
             <Select
-              placeholder="Wing"
-              style={{ width: 120 }}
+              placeholder="Status"
+              style={{ width: 130 }}
               allowClear
-              onChange={setSelectedWing}
-              value={selectedWing}
+              onChange={setStatusFilter}
+              value={statusFilter}
             >
-              {wings.map((wing) => (
-                <Option key={wing} value={wing}>
-                  {wing}
-                </Option>
-              ))}
+              <Option value="Occupied">Occupied</Option>
+              <Option value="Vacant">Vacant</Option>
             </Select>
             <Select
               placeholder="Unit Type"
@@ -618,33 +596,6 @@ const Units: React.FC = () => {
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
               <Option value="Flat">Flat</Option>
-            </Select>
-            <Select
-              placeholder="Occupancy"
-              style={{ width: 130 }}
-              allowClear
-              onChange={setSelectedOccupancy}
-              value={selectedOccupancy}
-            >
-              <Option value="Occupied">Occupied</Option>
-              <Option value="Vacant">Vacant</Option>
-            </Select>
-            <Select
-              placeholder="Financial Year"
-              style={{ width: 130 }}
-              allowClear
-              onChange={setSelectedFY}
-              value={selectedFY}
-            >
-              {Array.from({ length: 5 }, (_, i) => {
-                 const startYear = 2024 + i // Base year 2024
-                 const fy = `${startYear}-${(startYear + 1).toString().slice(2)}`
-                 return (
-                   <Option key={fy} value={fy}>
-                     {fy}
-                   </Option>
-                 )
-              })}
             </Select>
             <Space>
               <InputNumber
@@ -661,11 +612,6 @@ const Units: React.FC = () => {
                 onChange={(val) => setAreaRange([areaRange[0], val])}
               />
             </Space>
-            {selectedRowKeys.length > 0 && (
-              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-                Delete Selected ({selectedRowKeys.length})
-              </Button>
-            )}
           </Space>
         </div>
 
@@ -831,20 +777,6 @@ const Units: React.FC = () => {
                     )
                   },
                   {
-                    title: 'Wing',
-                    dataIndex: 'wing',
-                    key: 'wing',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Input
-                        size="small"
-                        value={text}
-                        onChange={(e) =>
-                          handlePreviewCellChange(record.previewId, 'wing', e.target.value)
-                        }
-                      />
-                    )
-                  },
-                  {
                     title: 'Area',
                     dataIndex: 'area_sqft',
                     key: 'area_sqft',
@@ -891,6 +823,22 @@ const Units: React.FC = () => {
                             e.target.value
                           )
                         }
+                      />
+                    )
+                  },
+                  {
+                    title: 'Penalty',
+                    dataIndex: 'penalty',
+                    key: 'penalty',
+                    width: 100,
+                    render: (text: number, record: ImportUnitPreview) => (
+                      <InputNumber
+                        size="small"
+                        value={text}
+                        onChange={(val) =>
+                          handlePreviewCellChange(record.previewId, 'penalty', val)
+                        }
+                        style={{ width: '100%' }}
                       />
                     )
                   }
@@ -949,9 +897,6 @@ const Units: React.FC = () => {
             <Form.Item name="unit_number" label="Unit Number" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="wing" label="Wing">
-              <Input />
-            </Form.Item>
             <Form.Item name="unit_type" label="Unit Type" rules={[{ required: true }]}>
               <Select>
                 <Option value="Residential">Residential</Option>
@@ -961,6 +906,15 @@ const Units: React.FC = () => {
             </Form.Item>
             <Form.Item name="area_sqft" label="Area (sqft)" rules={[{ required: true }]}>
               <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="penalty" label="Opening Penalty">
+              <InputNumber
+                style={{ width: '100%' }}
+                formatter={(value) => `₹ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={(displayValue) =>
+                  displayValue?.replace(/₹\s?|(,*)/g, '') as unknown as number
+                }
+              />
             </Form.Item>
             <Form.Item name="status" label="Status" rules={[{ required: true }]}>
               <Select>

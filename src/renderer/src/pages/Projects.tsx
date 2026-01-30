@@ -336,7 +336,7 @@ const Projects: React.FC = () => {
             onChange={(e) => setSearchText(e.target.value)}
           />
           <Select
-            placeholder="Filter by Status"
+            placeholder="Status"
             style={{ width: 150 }}
             allowClear
             onChange={(val) => setStatusFilter(val)}
@@ -346,7 +346,7 @@ const Projects: React.FC = () => {
             <Option value="Inactive">Inactive</Option>
           </Select>
           <Select
-            placeholder="Filter by City"
+            placeholder="City"
             style={{ width: 150 }}
             allowClear
             onChange={(val) => setCityFilter(val)}
@@ -379,11 +379,7 @@ const Projects: React.FC = () => {
         onCancel={() => setIsModalOpen(false)}
         width={700}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ status: 'Active', city: 'Ahmedabad' }}
-        >
+        <Form form={form} layout="vertical" initialValues={{ status: 'Active', city: 'Ahmedabad' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Form.Item
               name="name"

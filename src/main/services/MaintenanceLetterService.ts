@@ -27,7 +27,6 @@ export interface MaintenanceLetter {
   ifsc_code?: string
   add_ons_total?: number
   unit_type?: string
-  wing?: string
 }
 
 export interface AddOn {
@@ -187,7 +186,8 @@ class MaintenanceLetterService {
     page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 45, size: 10, font })
 
     // Add UPI Scanner
-    const upiPath = 'c:\\Users\\heman_naocpgi\\Documents\\Beverly-Hills-deskstop\\resources\\UPI.jpeg'
+    const upiPath =
+      'c:\\Users\\heman_naocpgi\\Documents\\Beverly-Hills-deskstop\\resources\\UPI.jpeg'
     if (fs.existsSync(upiPath)) {
       try {
         const upiImageBytes = fs.readFileSync(upiPath)
@@ -355,7 +355,7 @@ class MaintenanceLetterService {
 
   public getAll(): MaintenanceLetter[] {
     return dbService.query<MaintenanceLetter>(`
-      SELECT l.*, u.unit_number, u.owner_name, u.unit_type, u.wing, p.name as project_name,
+      SELECT l.*, u.unit_number, u.owner_name, u.unit_type, p.name as project_name,
              COALESCE((SELECT SUM(addon_amount) FROM add_ons WHERE letter_id = l.id), 0) as add_ons_total
       FROM maintenance_letters l
       JOIN units u ON l.unit_id = u.id

@@ -239,7 +239,7 @@ export function registerIpcHandlers(): void {
         )
         dbService.run('DELETE FROM maintenance_letters WHERE unit_id NOT IN (SELECT id FROM units)')
       }
-      
+
       // 5. Run deep cleanup methods (exposed from database.ts)
       logs.push('Running deep cleanup tasks...')
       dbService.cleanupOldTables()

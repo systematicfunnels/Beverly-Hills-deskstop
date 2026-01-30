@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS units (
   project_id INTEGER NOT NULL,
   unit_number TEXT NOT NULL,
   unit_type TEXT DEFAULT 'Flat', -- Flat, Bungalow
-  wing TEXT,
   area_sqft REAL NOT NULL,
   owner_name TEXT NOT NULL,
   contact_number TEXT,
