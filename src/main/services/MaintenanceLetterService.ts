@@ -227,12 +227,22 @@ class MaintenanceLetterService {
     financialYear: string,
     letterDate: string,
     dueDate: string,
+    unitIds: number[] = [],
     addOns: { addon_name: string; addon_amount: number }[] = []
   ): boolean {
     // 1. Check if the project has units
-    const projectUnits = dbService.query('SELECT id FROM units WHERE project_id = ?', [projectId])
+    let unitFilter = 'WHERE project_id = ?'
+    const unitParams: (string | number | undefined | null)[] = [projectId]
+    if (unitIds && unitIds.length > 0) {
+      unitFilter += ` AND id IN (${unitIds.map(() => '?').join(',')})`
+      unitParams.push(...unitIds)
+    }
+
+    const projectUnits = dbService.query(`SELECT id FROM units ${unitFilter}`, unitParams)
     if (projectUnits.length === 0) {
-      throw new Error(`Project has no units. Please add units before generating letters.`)
+      throw new Error(
+        `No units found matching criteria. Please add units before generating letters.`
+      )
     }
 
     // 2. Check if a maintenance rate is defined for this project and year
@@ -246,6 +256,13 @@ class MaintenanceLetterService {
       )
     }
 
+    let queryFilter = 'WHERE u.project_id = ? AND r.financial_year = ?'
+    const queryParams: (string | number | undefined | null)[] = [projectId, financialYear]
+    if (unitIds && unitIds.length > 0) {
+      queryFilter += ` AND u.id IN (${unitIds.map(() => '?').join(',')})`
+      queryParams.push(...unitIds)
+    }
+
     const units = dbService.query<{
       id: number
       area_sqft: number
@@ -257,9 +274,9 @@ class MaintenanceLetterService {
       FROM units u
       JOIN maintenance_rates r ON u.project_id = r.project_id AND u.unit_type = r.unit_type
       LEFT JOIN maintenance_slabs s ON r.id = s.rate_id AND s.is_early_payment = 1
-      WHERE u.project_id = ? AND r.financial_year = ?
+      ${queryFilter}
     `,
-      [projectId, financialYear]
+      queryParams
     )
 
     if (units.length === 0) {

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -14,9 +15,19 @@ import {
   Typography,
   Divider,
   Card,
-  DividerProps
+  DividerProps,
+  Progress,
+  Alert
 } from 'antd'
-import { PlusOutlined, DeleteOutlined, PrinterOutlined, TableOutlined } from '@ant-design/icons'
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  PrinterOutlined,
+  TableOutlined,
+  CalculatorOutlined,
+  ClearOutlined,
+  InfoCircleOutlined
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Project, Unit, Payment, MaintenanceLetter } from '@preload/types'
 
@@ -32,6 +43,11 @@ interface BulkPaymentEntry {
   payment_amount: number
   payment_mode: string
   payment_date: dayjs.Dayjs
+}
+
+interface ReceiptProgress {
+  current: number
+  total: number
 }
 
 const Payments: React.FC = () => {
@@ -54,9 +70,12 @@ const Payments: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [form] = Form.useForm()
   const [bulkForm] = Form.useForm()
+  const location = useLocation()
 
   const [bulkPayments, setBulkPayments] = useState<BulkPaymentEntry[]>([])
   const [bulkProject, setBulkProject] = useState<number | null>(null)
+  const [generatingReceipts, setGeneratingReceipts] = useState(false)
+  const [receiptProgress, setReceiptProgress] = useState<ReceiptProgress | null>(null)
 
   const fetchData = async (): Promise<void> => {
     setLoading(true)
@@ -80,8 +99,67 @@ const Payments: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
+  fetchData()
+  // Handle navigation shortcuts from Units page
+  const state = location.state as { unitId?: number }
+  if (state?.unitId) {
+    const checkUnits = setInterval(() => {
+      if (units.length > 0) {
+        const foundUnit = units.find((u) => u.id === state.unitId)
+        if (foundUnit) {
+          form.resetFields()
+          form.setFieldsValue({
+            unit_id: foundUnit.id,
+            project_id: foundUnit.project_id
+          })
+          setIsModalOpen(true)
+        }
+        clearInterval(checkUnits)
+      }
+    }, 100)
+    // Clear navigation state to prevent re-triggering on refresh
+    window.history.replaceState({}, document.title)
+    return () => clearInterval(checkUnits)
+  }
+  return undefined
+}, [location, units, form])
+
+  // Get unique financial years for filtering
+  const uniqueFinancialYears = useMemo(() => {
+    const years = Array.from(new Set(payments.map((p) => p.financial_year).filter(Boolean)))
+      .sort()
+      .reverse()
+    if (!years.includes(defaultFY)) {
+      years.unshift(defaultFY)
+    }
+    return years
+  }, [payments, defaultFY])
+
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return (
+      searchText ||
+      selectedProject !== null ||
+      selectedFY !== defaultFY ||
+      selectedMode !== null
+    )
+  }, [searchText, selectedProject, selectedFY, selectedMode, defaultFY])
+
+  // Get selected project name
+  const selectedProjectName = useMemo(() => {
+    if (!selectedProject) return ''
+    const project = projects.find((p) => p.id === selectedProject)
+    return project?.name || ''
+  }, [selectedProject, projects])
+
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    setSearchText('')
+    setSelectedProject(null)
+    setSelectedFY(defaultFY)
+    setSelectedMode(null)
+    setSelectedRowKeys([])
+  }, [defaultFY])
 
   const handleAdd = (): void => {
     form.resetFields()
@@ -95,9 +173,12 @@ const Payments: React.FC = () => {
     setIsBulkModalOpen(true)
   }
 
-  const handleBulkProjectChange = (projectId: number): void => {
+  const handleBulkProjectChange = useCallback((projectId: number): void => {
     setBulkProject(projectId)
     const projectUnits = units.filter((u) => u.project_id === projectId)
+    const paymentMode = bulkForm.getFieldValue('payment_mode') || 'Transfer'
+    const paymentDate = bulkForm.getFieldValue('payment_date') || dayjs()
+    
     setBulkPayments(
       projectUnits.map((u) => ({
         unit_id: u.id as number,
@@ -105,11 +186,29 @@ const Payments: React.FC = () => {
         unit_number: u.unit_number,
         owner_name: u.owner_name,
         payment_amount: 0,
-        payment_mode: bulkForm.getFieldValue('payment_mode') || 'Transfer',
-        payment_date: bulkForm.getFieldValue('payment_date') || dayjs()
+        payment_mode: paymentMode,
+        payment_date: paymentDate
       }))
     )
-  }
+  }, [units, bulkForm])
+
+  const handleSetSameAmount = useCallback(() => {
+    const amountStr = prompt('Enter amount to apply to all units:')
+    if (amountStr) {
+      const amount = Number.parseFloat(amountStr)
+      if (!Number.isNaN(amount) && amount >= 0) {
+        setBulkPayments((prev) =>
+          prev.map((p) => ({ ...p, payment_amount: amount }))
+        )
+      } else {
+        message.warning('Please enter a valid number')
+      }
+    }
+  }, [])
+
+  const handleClearAllAmounts = useCallback(() => {
+    setBulkPayments((prev) => prev.map((p) => ({ ...p, payment_amount: 0 })))
+  }, [])
 
   const handleBulkModalOk = async (): Promise<void> => {
     try {
@@ -139,8 +238,8 @@ const Payments: React.FC = () => {
       message.success(`Successfully recorded ${validPayments.length} payments`)
       setIsBulkModalOpen(false)
       fetchData()
-    } catch {
-      // console.error(error)
+    } catch (error) {
+      console.error('Failed to record bulk payments:', error)
       message.error('Failed to record bulk payments')
     } finally {
       setLoading(false)
@@ -168,7 +267,7 @@ const Payments: React.FC = () => {
       const paymentData = {
         ...values,
         financial_year: finalFinancialYear,
-        cheque_number: values.reference_number, // Map reference_number to cheque_number
+        cheque_number: values.reference_number,
         project_id: selectedUnit.project_id,
         payment_date: values.payment_date.format('YYYY-MM-DD')
       }
@@ -178,8 +277,8 @@ const Payments: React.FC = () => {
       message.success('Payment recorded successfully')
       setIsModalOpen(false)
       fetchData()
-    } catch {
-      // console.error(error)
+    } catch (error) {
+      console.error('Failed to record payment:', error)
       message.error('Failed to record payment')
     } finally {
       setLoading(false)
@@ -210,7 +309,9 @@ const Payments: React.FC = () => {
           await window.api.payments.bulkDelete(selectedRowKeys as number[])
           message.success(`Successfully deleted ${selectedRowKeys.length} payments`)
           fetchData()
-        } catch {
+          setSelectedRowKeys([])
+        } catch (error) {
+          console.error('Failed to delete payments:', error)
           message.error('Failed to delete payments')
         } finally {
           setLoading(false)
@@ -224,11 +325,48 @@ const Payments: React.FC = () => {
       setLoading(true)
       const pdfPath = await window.api.payments.generateReceiptPdf(id)
       await window.api.shell.showItemInFolder(pdfPath)
-    } catch {
-      // console.error(error)
+    } catch (error) {
+      console.error('Failed to generate receipt:', error)
       message.error('Failed to generate receipt')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleBatchReceipts = async (): Promise<void> => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Please select payments to generate receipts for')
+      return
+    }
+
+    setGeneratingReceipts(true)
+    setReceiptProgress({ current: 0, total: selectedRowKeys.length })
+
+    const paymentIds = selectedRowKeys as number[]
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < paymentIds.length; i++) {
+      try {
+        await window.api.payments.generateReceiptPdf(paymentIds[i])
+        successCount++
+      } catch {
+        failCount++
+      }
+      setReceiptProgress((prev) =>
+        prev ? { ...prev, current: i + 1 } : null
+      )
+    }
+
+    setGeneratingReceipts(false)
+    setReceiptProgress(null)
+
+    if (failCount === 0) {
+      message.success(`Successfully generated ${successCount} receipts`)
+    } else {
+      message.warning(
+        `Generated ${successCount} receipts, failed to generate ${failCount}`
+      )
     }
   }
 
@@ -237,7 +375,8 @@ const Payments: React.FC = () => {
       title: 'Unit',
       dataIndex: 'unit_number',
       key: 'unit_number',
-      sorter: (a: Payment, b: Payment) => (a.unit_number || '').localeCompare(b.unit_number || '')
+      sorter: (a: Payment, b: Payment) =>
+        (a.unit_number || '').localeCompare(b.unit_number || '')
     },
     {
       title: 'Date',
@@ -279,7 +418,7 @@ const Payments: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       align: 'right' as const,
-      render: (_, record: Payment) => (
+      render: (_: unknown, record: Payment) => (
         <Space>
           <Button
             size="small"
@@ -316,6 +455,22 @@ const Payments: React.FC = () => {
     return matchSearch && matchProject && matchMode && matchFY
   })
 
+  // Calculate bulk payment summary
+  const bulkPaymentSummary = useMemo(() => {
+    const unitsWithAmount = bulkPayments.filter((p) => p.payment_amount > 0).length
+    const totalAmount = bulkPayments.reduce((sum, p) => sum + p.payment_amount, 0)
+    const averageAmount = bulkPayments.length > 0 
+      ? Math.round(totalAmount / bulkPayments.length) 
+      : 0
+    
+    return {
+      unitsWithAmount,
+      totalAmount,
+      averageAmount,
+      totalUnits: bulkPayments.length
+    }
+  }, [bulkPayments])
+
   return (
     <div style={{ padding: '24px' }}>
       <div
@@ -333,9 +488,19 @@ const Payments: React.FC = () => {
         </Title>
         <Space>
           {selectedRowKeys.length > 0 && (
-            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-              Delete Selected ({selectedRowKeys.length})
-            </Button>
+            <>
+              <Button
+                type="primary"
+                icon={<PrinterOutlined />}
+                onClick={handleBatchReceipts}
+                loading={generatingReceipts}
+              >
+                Batch Receipts ({selectedRowKeys.length})
+              </Button>
+              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+                Delete Selected ({selectedRowKeys.length})
+              </Button>
+            </>
           )}
           <Button icon={<TableOutlined />} onClick={handleBulkAdd}>
             Bulk Record
@@ -357,6 +522,7 @@ const Payments: React.FC = () => {
               style={{ width: 250 }}
               enterButton
               suffix={null}
+              value={searchText}
             />
             <Select
               placeholder="Project"
@@ -378,19 +544,11 @@ const Payments: React.FC = () => {
               onChange={setSelectedFY}
               value={selectedFY}
             >
-              {Array.from(new Set(payments.map((p) => p.financial_year).filter(Boolean)))
-                .sort()
-                .reverse()
-                .map((fy) => (
-                  <Option key={fy} value={fy}>
-                    {fy}
-                  </Option>
-                ))}
-              {!payments.some((p) => p.financial_year === defaultFY) && (
-                <Option key={defaultFY} value={defaultFY}>
-                  {defaultFY}
+              {uniqueFinancialYears.map((fy) => (
+                <Option key={fy} value={fy}>
+                  {fy}
                 </Option>
-              )}
+              ))}
             </Select>
             <Select
               placeholder="Mode"
@@ -404,6 +562,45 @@ const Payments: React.FC = () => {
               <Option value="Cash">Cash</Option>
             </Select>
           </Space>
+
+          {/* Filter Summary Chips */}
+          {hasActiveFilters && (
+            <div style={{ marginTop: 16 }}>
+              <Space wrap>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Active filters:
+                </Text>
+                {searchText && (
+                  <Tag closable onClose={() => setSearchText('')}>
+                    Search: &quot;{searchText}&quot;
+                  </Tag>
+                )}
+                {selectedProject !== null && (
+                  <Tag closable onClose={() => setSelectedProject(null)}>
+                    Project: {selectedProjectName}
+                  </Tag>
+                )}
+                {selectedFY !== null && selectedFY !== defaultFY && (
+                  <Tag closable onClose={() => setSelectedFY(defaultFY)}>
+                    FY: {selectedFY}
+                  </Tag>
+                )}
+                {selectedMode !== null && (
+                  <Tag closable onClose={() => setSelectedMode(null)}>
+                    Mode: {selectedMode}
+                  </Tag>
+                )}
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={clearAllFilters}
+                  style={{ fontSize: '12px', padding: 0, height: 'auto' }}
+                >
+                  Clear all
+                </Button>
+              </Space>
+            </div>
+          )}
         </div>
 
         <Table
@@ -420,6 +617,38 @@ const Payments: React.FC = () => {
         />
       </Card>
 
+      {/* Batch Receipt Generation Progress Modal */}
+      <Modal
+        title="Generating Receipts"
+        open={generatingReceipts}
+        onCancel={() => setGeneratingReceipts(false)}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => setGeneratingReceipts(false)}
+            disabled={receiptProgress?.current === receiptProgress?.total}
+          >
+            Cancel
+          </Button>
+        ]}
+        closable={false}
+        width={500}
+      >
+        {receiptProgress && (
+          <div>
+            <Progress
+              percent={Math.round((receiptProgress.current / receiptProgress.total) * 100)}
+              status="active"
+              style={{ marginBottom: 16 }}
+            />
+            <Text>
+              Generating {receiptProgress.current} of {receiptProgress.total} receipts
+            </Text>
+          </div>
+        )}
+      </Modal>
+
+      {/* Record Single Payment Modal */}
       <Modal
         title="Record New Payment"
         open={isModalOpen}
@@ -440,28 +669,30 @@ const Payments: React.FC = () => {
             <Form.Item
               name="unit_id"
               label="Select Unit"
-              rules={[{ required: true }]}
+              rules={[{ required: true, message: 'Please select a unit' }]}
               style={{ gridColumn: 'span 2' }}
             >
               <Select
-                showSearch
-                placeholder="Search Unit"
-                filterOption={(input, option) =>
-                  String(option?.children ?? '')
-                    .toLowerCase()
-                    .includes(input.toLowerCase())
-                }
-                onChange={() => {
-                  form.setFieldsValue({ letter_id: undefined })
-                }}
-              >
-                {units.map((u) => (
-                  <Option key={u.id} value={u.id}>
-                    {u.project_name} - {u.unit_number} ({u.owner_name})
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
+            showSearch
+            placeholder="Search Unit"
+            filterOption={(input, option) => {
+              if (!option || !option.children) {
+                return false;
+              }
+              const optionText = String(option.children);
+              return optionText.toLowerCase().includes(input.toLowerCase());
+            }}
+            onChange={() => {
+              form.setFieldsValue({ letter_id: undefined })
+            }}
+          >
+            {units.map((u) => (
+              <Option key={u.id} value={u.id}>
+                {u.project_name} - {u.unit_number} ({u.owner_name})
+              </Option>
+            ))}
+          </Select>
+        </Form.Item>
 
             <Form.Item
               noStyle
@@ -482,7 +713,11 @@ const Payments: React.FC = () => {
                       name="letter_id"
                       label="Against Maintenance Letter"
                       extra={
-                        unitLetters.length === 0 ? 'No maintenance letters found for this unit' : ''
+                        <div style={{ fontSize: '12px' }}>
+                          {unitLetters.length === 0
+                            ? 'No maintenance letters found for this unit'
+                            : 'Selecting a letter will automatically set the financial year and amount'}
+                        </div>
                       }
                       style={{ gridColumn: 'span 1' }}
                     >
@@ -493,14 +728,18 @@ const Payments: React.FC = () => {
                         onChange={(val) => {
                           if (val) {
                             const letter = unitLetters.find((l) => l.id === val)
-                            if (letter)
-                              form.setFieldsValue({ financial_year: letter.financial_year })
+                            if (letter) {
+                              form.setFieldsValue({
+                                financial_year: letter.financial_year,
+                                payment_amount: letter.final_amount
+                              })
+                            }
                           }
                         }}
                       >
                         {unitLetters.map((letter) => (
                           <Option key={letter.id} value={letter.id}>
-                            {letter.financial_year} - ₹{letter.final_amount}
+                            FY {letter.financial_year} - ₹{letter.final_amount} ({letter.status})
                           </Option>
                         ))}
                       </Select>
@@ -512,8 +751,10 @@ const Payments: React.FC = () => {
                       rules={[{ required: true, message: 'Please select a financial year' }]}
                       style={{ gridColumn: 'span 1' }}
                     >
-                      <Select placeholder="Select Financial Year" disabled={!!selectedLetter}>
-                        {/* Generate some common FY options or fetch from letters */}
+                      <Select
+                        placeholder="Select Financial Year"
+                        disabled={!!selectedLetter}
+                      >
                         {Array.from(new Set(letters.map((l) => l.financial_year)))
                           .sort()
                           .reverse()
@@ -522,7 +763,6 @@ const Payments: React.FC = () => {
                               {fy}
                             </Option>
                           ))}
-                        {/* Add current/next FY as options if not in letters */}
                         <Option value="2024-25">2024-25</Option>
                         <Option value="2025-26">2025-26</Option>
                         <Option value="2026-27">2026-27</Option>
@@ -536,14 +776,29 @@ const Payments: React.FC = () => {
 
           <Divider orientation={'left' as DividerProps['orientation']}>Payment Details</Divider>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <Form.Item name="payment_date" label="Payment Date" rules={[{ required: true }]}>
+            <Form.Item
+              name="payment_date"
+              label="Payment Date"
+              rules={[{ required: true, message: 'Please select payment date' }]}
+            >
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="payment_amount" label="Amount (₹)" rules={[{ required: true }]}>
-              <InputNumber style={{ width: '100%' }} />
+            <Form.Item
+              name="payment_amount"
+              label="Amount (₹)"
+              rules={[
+                { required: true, message: 'Please enter amount' },
+                { type: 'number', min: 1, message: 'Amount must be greater than 0' }
+              ]}
+            >
+              <InputNumber style={{ width: '100%' }} min={1} />
             </Form.Item>
 
-            <Form.Item name="payment_mode" label="Payment Mode" rules={[{ required: true }]}>
+            <Form.Item
+              name="payment_mode"
+              label="Payment Mode"
+              rules={[{ required: true, message: 'Please select payment mode' }]}
+            >
               <Select>
                 <Option value="Transfer">Bank Transfer / UPI</Option>
                 <Option value="Cheque">Cheque</Option>
@@ -560,6 +815,8 @@ const Payments: React.FC = () => {
           </div>
         </Form>
       </Modal>
+
+      {/* Bulk Payment Modal */}
       <Modal
         title="Bulk Payment Entry"
         open={isBulkModalOpen}
@@ -567,10 +824,11 @@ const Payments: React.FC = () => {
         onCancel={() => setIsBulkModalOpen(false)}
         confirmLoading={loading}
         width={1000}
+        okText="Record Payments"
       >
         <Form form={bulkForm} layout="vertical">
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
-            <Form.Item label="Project" style={{ flex: 1 }}>
+            <Form.Item label="Project" style={{ flex: 1 }} required>
               <Select
                 placeholder="Select Project"
                 onChange={handleBulkProjectChange}
@@ -588,13 +846,14 @@ const Payments: React.FC = () => {
               label="Payment Date"
               initialValue={dayjs()}
               style={{ flex: 1 }}
+              rules={[{ required: true, message: 'Please select payment date' }]}
             >
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item
               name="financial_year"
               label="Financial Year"
-              rules={[{ required: true }]}
+              rules={[{ required: true, message: 'Please select financial year' }]}
               style={{ flex: 1 }}
             >
               <Select placeholder="Select Year">
@@ -618,7 +877,9 @@ const Payments: React.FC = () => {
             >
               <Select
                 onChange={(val) =>
-                  setBulkPayments((prev) => prev.map((p) => ({ ...p, payment_mode: val })))
+                  setBulkPayments((prev) =>
+                    prev.map((p) => ({ ...p, payment_mode: val }))
+                  )
                 }
               >
                 <Option value="Transfer">Bank Transfer / UPI</Option>
@@ -628,62 +889,128 @@ const Payments: React.FC = () => {
             </Form.Item>
           </div>
 
-          <Table
-            dataSource={bulkPayments}
-            pagination={false}
-            scroll={{ y: 400 }}
-            rowKey="unit_id"
-            columns={[
-              { title: 'Unit #', dataIndex: 'unit_number', key: 'unit_number', width: 100 },
-              { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' },
-              {
-                title: 'Amount (₹)',
-                key: 'amount',
-                width: 150,
-                render: (_, record: BulkPaymentEntry, index: number) => (
-                  <InputNumber
-                    min={0}
-                    style={{ width: '100%' }}
-                    value={record.payment_amount}
-                    onChange={(val) => {
-                      const newPayments = [...bulkPayments]
-                      newPayments[index].payment_amount = val || 0
-                      setBulkPayments(newPayments)
-                    }}
-                  />
-                )
-              },
-              {
-                title: 'Mode',
-                key: 'mode',
-                width: 150,
-                render: (_, record: BulkPaymentEntry, index: number) => (
-                  <Select
-                    style={{ width: '100%' }}
-                    value={record.payment_mode}
-                    onChange={(val) => {
-                      const newPayments = [...bulkPayments]
-                      newPayments[index].payment_mode = val
-                      setBulkPayments(newPayments)
-                    }}
-                  >
-                    <Option value="Transfer">Transfer</Option>
-                    <Option value="Cheque">Cheque</Option>
-                    <Option value="Cash">Cash</Option>
-                  </Select>
-                )
-              }
-            ]}
-          />
+          {bulkProject && (
+            <>
+              <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Text type="secondary">Quick actions:</Text>
+                <Button
+                  size="small"
+                  icon={<CalculatorOutlined />}
+                  onClick={handleSetSameAmount}
+                >
+                  Set Same Amount
+                </Button>
+                <Button
+                  size="small"
+                  icon={<InfoCircleOutlined />}
+                  onClick={() => {
+                    message.info('Calculate from letters feature coming soon')
+                  }}
+                >
+                  Calculate from Letters
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  icon={<ClearOutlined />}
+                  onClick={handleClearAllAmounts}
+                >
+                  Clear All Amounts
+                </Button>
+              </div>
 
-          <div style={{ marginTop: '16px', display: 'flex', gap: '16px' }}>
-            <Form.Item name="reference_number" label="Common Ref # (Optional)" style={{ flex: 1 }}>
-              <Input placeholder="UTR / Cheque No" />
-            </Form.Item>
-            <Form.Item name="remarks" label="Common Remarks (Optional)" style={{ flex: 1 }}>
-              <Input />
-            </Form.Item>
-          </div>
+              <Table
+                dataSource={bulkPayments}
+                pagination={false}
+                scroll={{ y: 400 }}
+                rowKey="unit_id"
+                columns={[
+                  { title: 'Unit #', dataIndex: 'unit_number', key: 'unit_number', width: 100 },
+                  { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' },
+                  {
+                    title: 'Amount (₹)',
+                    key: 'amount',
+                    width: 150,
+                    render: (_: unknown, record: BulkPaymentEntry, index: number) => (
+                      <InputNumber
+                        min={0}
+                        style={{ width: '100%' }}
+                        value={record.payment_amount}
+                        onChange={(val) => {
+                          const newPayments = [...bulkPayments]
+                          newPayments[index].payment_amount = val || 0
+                          setBulkPayments(newPayments)
+                        }}
+                      />
+                    )
+                  },
+                  {
+                    title: 'Mode',
+                    key: 'mode',
+                    width: 150,
+                    render: (_: unknown, record: BulkPaymentEntry, index: number) => (
+                      <Select
+                        style={{ width: '100%' }}
+                        value={record.payment_mode}
+                        onChange={(val) => {
+                          const newPayments = [...bulkPayments]
+                          newPayments[index].payment_mode = val
+                          setBulkPayments(newPayments)
+                        }}
+                      >
+                        <Option value="Transfer">Transfer</Option>
+                        <Option value="Cheque">Cheque</Option>
+                        <Option value="Cash">Cash</Option>
+                      </Select>
+                    )
+                  }
+                ]}
+              />
+
+              {/* Bulk Payment Summary */}
+              {bulkPayments.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    padding: '12px 16px',
+                    background: '#f6ffed',
+                    borderRadius: 4,
+                    border: '1px solid #b7eb8f'
+                  }}
+                >
+                  <Space size="large">
+                    <Text strong>
+                      Units with amount: {bulkPaymentSummary.unitsWithAmount} / {bulkPaymentSummary.totalUnits}
+                    </Text>
+                    <Text strong type="success">
+                      Total Amount: ₹{bulkPaymentSummary.totalAmount.toLocaleString()}
+                    </Text>
+                    <Text type="secondary">
+                      Average: ₹{bulkPaymentSummary.averageAmount.toLocaleString()}
+                    </Text>
+                  </Space>
+                </div>
+              )}
+
+              <div style={{ marginTop: '16px', display: 'flex', gap: '16px' }}>
+                <Form.Item name="reference_number" label="Common Ref # (Optional)" style={{ flex: 1 }}>
+                  <Input placeholder="UTR / Cheque No" />
+                </Form.Item>
+                <Form.Item name="remarks" label="Common Remarks (Optional)" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+              </div>
+            </>
+          )}
+
+          {!bulkProject && (
+            <Alert
+              message="Select a project to start bulk payment entry"
+              type="info"
+              showIcon
+              style={{ marginTop: 16 }}
+            />
+          )}
         </Form>
       </Modal>
     </div>

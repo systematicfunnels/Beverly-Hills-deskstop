@@ -56,10 +56,11 @@ declare global {
         getById: (id: number) => Promise<MaintenanceLetter | undefined>
         createBatch: (params: {
           projectId: number
+          unitIds?: number[]
           financialYear: string
           letterDate: string
           dueDate: string
-          addOns: { name: string; amount: number }[]
+          addOns?: { addon_name: string; addon_amount: number }[]
         }) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>

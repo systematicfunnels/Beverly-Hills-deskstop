@@ -1,20 +1,44 @@
-import React, { useState, useEffect } from 'react'
-import { Row, Col, Card, Statistic, Typography, Skeleton, message, Select, Space } from 'antd'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  Row,
+  Col,
+  Card,
+  Statistic,
+  Typography,
+  Skeleton,
+  message,
+  Select,
+  Space,
+  Tag,
+  Button,
+  Tooltip,
+  Spin
+} from 'antd'
 import { useNavigate } from 'react-router-dom'
 import {
   HomeOutlined,
   UserOutlined,
   FileTextOutlined,
   ArrowRightOutlined,
-  ProjectOutlined
+  ProjectOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons'
 import { IndianRupee } from 'lucide-react'
 import { Project } from '@preload/types'
-
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
 const { Option } = Select
+
+interface StatCard {
+  title: string
+  value: number
+  icon: React.ReactNode
+  color: string
+  path: string
+  isCurrency?: boolean
+  tooltip?: string
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -62,7 +86,6 @@ const Dashboard: React.FC = () => {
         )
         setStats(data)
       } catch {
-        // console.error('Dashboard data fetch failed', error)
         message.error('Failed to load dashboard statistics')
       } finally {
         setLoading(false)
@@ -73,14 +96,42 @@ const Dashboard: React.FC = () => {
   }, [selectedProject, selectedFY, selectedUnitType, selectedStatus])
 
   // Generate a range of financial years for the filter
-  const financialYears: string[] = []
-  const startYear = 2024 // Application start year
-  const endYear = currentYear + 1
-  for (let y = startYear; y <= endYear; y++) {
-    financialYears.push(`${y}-${(y + 1).toString().slice(2)}`)
-  }
+  const financialYears = useMemo(() => {
+    const years: string[] = []
+    const startYear = 2024 // Application start year
+    const endYear = currentYear + 1
+    for (let y = startYear; y <= endYear; y++) {
+      years.push(`${y}-${(y + 1).toString().slice(2)}`)
+    }
+    return years
+  }, [currentYear])
 
-  const statCards = [
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return (
+      selectedProject !== undefined ||
+      selectedUnitType !== undefined ||
+      selectedStatus !== undefined ||
+      selectedFY !== defaultFY
+    )
+  }, [selectedProject, selectedUnitType, selectedStatus, selectedFY, defaultFY])
+
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    setSelectedProject(undefined)
+    setSelectedUnitType(undefined)
+    setSelectedStatus(undefined)
+    setSelectedFY(defaultFY)
+  }, [defaultFY])
+
+  // Get selected project name
+  const selectedProjectName = useMemo(() => {
+    if (!selectedProject) return ''
+    const project = projects.find((p) => p.id === selectedProject)
+    return project?.name || ''
+  }, [selectedProject, projects])
+
+  const statCards: StatCard[] = [
     {
       title: 'PROJECTS',
       value: stats.projects,
@@ -100,7 +151,8 @@ const Dashboard: React.FC = () => {
       value: stats.pendingUnits,
       icon: <FileTextOutlined style={{ color: '#cf1322' }} />,
       color: '#cf1322',
-      path: '/units'
+      path: '/units',
+      tooltip: 'Units with outstanding maintenance payments for current financial year'
     },
     {
       title: 'TOTAL OUTSTANDING',
@@ -108,7 +160,8 @@ const Dashboard: React.FC = () => {
       icon: <IndianRupee size={24} style={{ color: '#cf1322' }} />,
       color: '#cf1322',
       isCurrency: true,
-      path: '/reports'
+      path: '/reports',
+      tooltip: 'Total unpaid maintenance amount across all projects'
     },
     {
       title: 'COLLECTED (FY)',
@@ -116,7 +169,8 @@ const Dashboard: React.FC = () => {
       icon: <IndianRupee size={24} style={{ color: '#3f8600' }} />,
       color: '#3f8600',
       isCurrency: true,
-      path: '/payments'
+      path: '/payments',
+      tooltip: 'Total collected maintenance for selected financial year'
     }
   ]
 
@@ -127,7 +181,9 @@ const Dashboard: React.FC = () => {
           marginBottom: 32,
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'flex-end'
+          alignItems: 'flex-end',
+          flexWrap: 'wrap',
+          gap: '16px'
         }}
       >
         <div>
@@ -136,13 +192,24 @@ const Dashboard: React.FC = () => {
           </Title>
           <Text type="secondary" style={{ fontSize: 16 }}>
             Welcome back! Summary for Financial Year <strong>{selectedFY}</strong>
+            {selectedFY === defaultFY && ' (Current)'}
           </Text>
         </div>
-        <Space size="middle" wrap>
+        <Space
+          size="middle"
+          wrap
+          style={{
+            opacity: loading ? 0.7 : 1,
+            pointerEvents: loading ? 'none' : 'auto'
+          }}
+        >
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>
-              Project
-            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Text type="secondary" strong style={{ fontSize: 12 }}>
+                Project
+              </Text>
+              {loading && <Spin size="small" style={{ marginLeft: 4 }} />}
+            </div>
             <Select
               placeholder="All Projects"
               style={{ width: 180 }}
@@ -150,6 +217,7 @@ const Dashboard: React.FC = () => {
               onChange={(value) => setSelectedProject(value)}
               value={selectedProject}
               suffixIcon={<ProjectOutlined />}
+              disabled={loading}
             >
               {projects.map((p) => (
                 <Option key={p.id} value={p.id}>
@@ -159,47 +227,92 @@ const Dashboard: React.FC = () => {
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>
-              Financial Year
-            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Text type="secondary" strong style={{ fontSize: 12 }}>
+                Financial Year
+              </Text>
+              {selectedFY === defaultFY && (
+                <Tag color="blue" style={{ marginLeft: 4 }}>
+                  Current
+                </Tag>
+              )}
+            </div>
             <Select
               placeholder="Select Year"
-              style={{ width: 120 }}
+              style={{ width: 200 }}
+              popupMatchSelectWidth={false}
               onChange={(value) => setSelectedFY(value)}
               value={selectedFY}
+              disabled={loading}
+              dropdownRender={(menu) => (
+                <>
+                  <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+                    <Space size="small">
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        onClick={() => {
+                          const prevYear = currentYear - 1
+                          setSelectedFY(`${prevYear}-${(prevYear + 1).toString().slice(2)}`)
+                        }}
+                      >
+                        Previous Year
+                      </Button>
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        onClick={() => setSelectedFY(defaultFY)}
+                      >
+                        Current Year
+                      </Button>
+                    </Space>
+                  </div>
+                  {menu}
+                </>
+              )}
             >
               {financialYears.map((fy) => (
                 <Option key={fy} value={fy}>
-                  {fy}
+                  {fy === defaultFY ? `${fy} (Current)` : fy}
                 </Option>
               ))}
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>
-              Unit Type
-            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Text type="secondary" strong style={{ fontSize: 12 }}>
+                Unit Type
+              </Text>
+              {loading && <Spin size="small" style={{ marginLeft: 4 }} />}
+            </div>
             <Select
               placeholder="All Types"
               style={{ width: 130 }}
               allowClear
               onChange={setSelectedUnitType}
               value={selectedUnitType}
+              disabled={loading}
             >
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
             </Select>
           </Space>
           <Space direction="vertical" align="start">
-            <Text type="secondary" strong style={{ fontSize: 12 }}>
-              Status
-            </Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Text type="secondary" strong style={{ fontSize: 12 }}>
+                Status
+              </Text>
+              {loading && <Spin size="small" style={{ marginLeft: 4 }} />}
+            </div>
             <Select
               placeholder="All Status"
               style={{ width: 120 }}
               allowClear
               onChange={setSelectedStatus}
               value={selectedStatus}
+              disabled={loading}
             >
               <Option value="Active">Active</Option>
               <Option value="Inactive">Inactive</Option>
@@ -207,6 +320,59 @@ const Dashboard: React.FC = () => {
           </Space>
         </Space>
       </div>
+
+      {/* Filter Summary Section */}
+      {hasActiveFilters && (
+        <div
+          style={{ marginBottom: 24, padding: '12px 16px', background: '#fafafa', borderRadius: 6 }}
+        >
+          <Space wrap align="center">
+            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500 }}>
+              Active filters:
+            </Text>
+            {selectedProject !== undefined && (
+              <Tag
+                closable
+                onClose={() => setSelectedProject(undefined)}
+                style={{ fontSize: '12px' }}
+              >
+                Project: {selectedProjectName}
+              </Tag>
+            )}
+            {selectedUnitType !== undefined && (
+              <Tag
+                closable
+                onClose={() => setSelectedUnitType(undefined)}
+                style={{ fontSize: '12px' }}
+              >
+                Type: {selectedUnitType}
+              </Tag>
+            )}
+            {selectedStatus !== undefined && (
+              <Tag
+                closable
+                onClose={() => setSelectedStatus(undefined)}
+                style={{ fontSize: '12px' }}
+              >
+                Status: {selectedStatus}
+              </Tag>
+            )}
+            {selectedFY !== defaultFY && (
+              <Tag closable onClose={() => setSelectedFY(defaultFY)} style={{ fontSize: '12px' }}>
+                FY: {selectedFY}
+              </Tag>
+            )}
+            <Button
+              type="link"
+              size="small"
+              onClick={clearAllFilters}
+              style={{ fontSize: '12px', padding: 0, height: 'auto' }}
+            >
+              Clear all filters
+            </Button>
+          </Space>
+        </div>
+      )}
 
       <Row gutter={[24, 24]}>
         {statCards.map((card, index) => (
@@ -216,38 +382,55 @@ const Dashboard: React.FC = () => {
               hoverable
               className="admin-stat-card"
               onClick={() => navigate(card.path)}
-              style={{ height: '100%' }}
+              style={{ height: '100%', cursor: 'pointer' }}
             >
               <Skeleton loading={loading} active paragraph={{ rows: 1 }}>
-                <Statistic
-                  title={
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <Text type="secondary" strong style={{ fontSize: 12 }}>
-                        {card.title}
-                      </Text>
-                      <ArrowRightOutlined style={{ fontSize: 12, color: '#bfbfbf' }} />
-                    </div>
-                  }
-                  value={card.value}
-                  prefix={card.icon}
-                  precision={card.isCurrency ? 2 : 0}
-                  formatter={
-                    card.isCurrency
-                      ? (val) =>
-                          `₹${Number(val).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          })}`
-                      : undefined
-                  }
-                  valueStyle={{ color: card.color, fontWeight: 700 }}
-                />
+                <Tooltip title={card.tooltip}>
+                  <Statistic
+                    title={
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: 4
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Text type="secondary" strong style={{ fontSize: 12 }}>
+                            {card.title}
+                          </Text>
+                          {card.tooltip && (
+                            <QuestionCircleOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />
+                          )}
+                        </div>
+                        <ArrowRightOutlined style={{ fontSize: 12, color: '#bfbfbf' }} />
+                      </div>
+                    }
+                    value={card.value}
+                    prefix={card.icon}
+                    precision={card.isCurrency ? 2 : 0}
+                    formatter={
+                      card.isCurrency
+                        ? (val) =>
+                            `₹${Number(val).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2
+                            })}`
+                        : undefined
+                    }
+                    valueStyle={{
+                      color: card.color,
+                      fontWeight: 700,
+                      fontSize: hasActiveFilters ? '20px' : '24px'
+                    }}
+                  />
+                  {hasActiveFilters && (
+                    <Text type="secondary" style={{ fontSize: 10, marginTop: 4, display: 'block' }}>
+                      Filtered view
+                    </Text>
+                  )}
+                </Tooltip>
               </Skeleton>
             </Card>
           </Col>
@@ -270,7 +453,8 @@ const Dashboard: React.FC = () => {
                     textAlign: 'center',
                     background: '#f6ffed',
                     border: '1px solid #b7eb8f',
-                    borderRadius: 4
+                    borderRadius: 4,
+                    cursor: 'pointer'
                   }}
                   onClick={() => navigate('/billing')}
                 >
@@ -288,7 +472,8 @@ const Dashboard: React.FC = () => {
                     textAlign: 'center',
                     background: '#e6f7ff',
                     border: '1px solid #91d5ff',
-                    borderRadius: 4
+                    borderRadius: 4,
+                    cursor: 'pointer'
                   }}
                   onClick={() => navigate('/units')}
                 >
@@ -306,7 +491,8 @@ const Dashboard: React.FC = () => {
                     textAlign: 'center',
                     background: '#fff7e6',
                     border: '1px solid #ffd591',
-                    borderRadius: 4
+                    borderRadius: 4,
+                    cursor: 'pointer'
                   }}
                   onClick={() => navigate('/payments')}
                 >

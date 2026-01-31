@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -15,9 +16,18 @@ import {
   Card,
   Alert,
   DividerProps,
-  Tag
+  Tag,
+  Tooltip
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  UploadOutlined,
+  FilePdfOutlined,
+  DollarOutlined,
+  SolutionOutlined
+} from '@ant-design/icons'
 import { Unit, Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 
@@ -53,18 +63,29 @@ const Units: React.FC = () => {
   const [defaultArea, setDefaultArea] = useState<number>(0)
 
   const [form] = Form.useForm()
+  const navigate = useNavigate()
 
   // Memoized filter status for performance
   const hasActiveFilters = useMemo(() => {
-    return searchText || selectedProject || selectedUnitType || statusFilter || areaRange[0] !== null || areaRange[1] !== null
+    return (
+      searchText ||
+      selectedProject ||
+      selectedUnitType ||
+      statusFilter ||
+      areaRange[0] !== null ||
+      areaRange[1] !== null
+    )
   }, [searchText, selectedProject, selectedUnitType, statusFilter, areaRange])
 
   // Find project name by ID
-  const getProjectNameById = useCallback((id: number | null) => {
-    if (!id) return ''
-    const project = projects.find(p => p.id === id)
-    return project?.name || ''
-  }, [projects])
+  const getProjectNameById = useCallback(
+    (id: number | null) => {
+      if (!id) return ''
+      const project = projects.find((p) => p.id === id)
+      return project?.name || ''
+    },
+    [projects]
+  )
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
@@ -203,8 +224,10 @@ const Units: React.FC = () => {
           const raw = String(
             getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
               (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Plot')
-          ).trim().toLowerCase()
-          
+          )
+            .trim()
+            .toLowerCase()
+
           if (['bungalow', 'yes', 'y', '1', 'true'].includes(raw)) return 'Bungalow'
           return 'Plot' // Default to Plot for 'plot', 'no', 'n', '0', 'false' or any other value
         })(),
@@ -514,6 +537,20 @@ const Units: React.FC = () => {
       align: 'right' as const,
       render: (_: unknown, record: Unit) => (
         <Space>
+          <Tooltip title="Generate Letter">
+            <Button
+              size="small"
+              icon={<FilePdfOutlined />}
+              onClick={() => navigate('/billing', { state: { unitId: record.id } })}
+            />
+          </Tooltip>
+          <Tooltip title="Add Payment">
+            <Button
+              size="small"
+              icon={<DollarOutlined />}
+              onClick={() => navigate('/payments', { state: { unitId: record.id } })}
+            />
+          </Tooltip>
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Button
             size="small"
@@ -551,9 +588,18 @@ const Units: React.FC = () => {
         </div>
         <Space wrap>
           {selectedRowKeys.length > 0 && (
-            <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
-              Delete Selected ({selectedRowKeys.length})
-            </Button>
+            <>
+              <Button
+                type="primary"
+                icon={<SolutionOutlined />}
+                onClick={() => navigate('/billing', { state: { unitIds: selectedRowKeys } })}
+              >
+                Batch Letters ({selectedRowKeys.length})
+              </Button>
+              <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
+                Delete ({selectedRowKeys.length})
+              </Button>
+            </>
           )}
           <Upload
             beforeUpload={handleImport}
@@ -613,7 +659,7 @@ const Units: React.FC = () => {
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
             </Select>
-            
+
             {/* Area range with validation */}
             <Input.Group compact>
               <InputNumber
@@ -622,10 +668,10 @@ const Units: React.FC = () => {
                 value={areaRange[0]}
                 onChange={(min) => {
                   if (areaRange[1] && min && min > areaRange[1]) {
-                    message.warning('Minimum area cannot be greater than maximum');
-                    return;
+                    message.warning('Minimum area cannot be greater than maximum')
+                    return
                   }
-                  setAreaRange([min, areaRange[1]]);
+                  setAreaRange([min, areaRange[1]])
                 }}
               />
               <span style={{ padding: '0 8px', lineHeight: '32px' }}>to</span>
@@ -635,32 +681,30 @@ const Units: React.FC = () => {
                 value={areaRange[1]}
                 onChange={(max) => {
                   if (areaRange[0] && max && max < areaRange[0]) {
-                    message.warning('Maximum area cannot be less than minimum');
-                    return;
+                    message.warning('Maximum area cannot be less than minimum')
+                    return
                   }
-                  setAreaRange([areaRange[0], max]);
+                  setAreaRange([areaRange[0], max])
                 }}
               />
             </Input.Group>
           </Space>
-          
+
           {/* Filter summary chips */}
           {hasActiveFilters && (
             <div style={{ marginTop: 16 }}>
               <Space wrap>
-                <Text type="secondary" style={{ fontSize: '12px' }}>Active filters:</Text>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Active filters:
+                </Text>
                 {searchText && (
-                  <Tag 
-                    closable 
-                    onClose={() => setSearchText('')}
-                    style={{ fontSize: '12px' }}
-                  >
-                    Search: "{searchText}"
+                  <Tag closable onClose={() => setSearchText('')} style={{ fontSize: '12px' }}>
+                    Search: &quot;{searchText}&quot;
                   </Tag>
                 )}
                 {selectedProject && (
-                  <Tag 
-                    closable 
+                  <Tag
+                    closable
                     onClose={() => setSelectedProject(null)}
                     style={{ fontSize: '12px' }}
                   >
@@ -668,8 +712,8 @@ const Units: React.FC = () => {
                   </Tag>
                 )}
                 {selectedUnitType && (
-                  <Tag 
-                    closable 
+                  <Tag
+                    closable
                     onClose={() => setSelectedUnitType(null)}
                     style={{ fontSize: '12px' }}
                   >
@@ -677,26 +721,23 @@ const Units: React.FC = () => {
                   </Tag>
                 )}
                 {statusFilter && (
-                  <Tag 
-                    closable 
-                    onClose={() => setStatusFilter(null)}
-                    style={{ fontSize: '12px' }}
-                  >
+                  <Tag closable onClose={() => setStatusFilter(null)} style={{ fontSize: '12px' }}>
                     Status: {statusFilter}
                   </Tag>
                 )}
                 {(areaRange[0] !== null || areaRange[1] !== null) && (
-                  <Tag 
-                    closable 
+                  <Tag
+                    closable
                     onClose={() => setAreaRange([null, null])}
                     style={{ fontSize: '12px' }}
                   >
-                    Area: {areaRange[0] !== null ? `${areaRange[0]}` : 'Any'} to {areaRange[1] !== null ? `${areaRange[1]}` : 'Any'}
+                    Area: {areaRange[0] !== null ? `${areaRange[0]}` : 'Any'} to{' '}
+                    {areaRange[1] !== null ? `${areaRange[1]}` : 'Any'}
                   </Tag>
                 )}
-                <Button 
-                  type="link" 
-                  size="small" 
+                <Button
+                  type="link"
+                  size="small"
                   onClick={clearAllFilters}
                   style={{ fontSize: '12px', padding: 0, height: 'auto' }}
                 >
@@ -736,8 +777,8 @@ const Units: React.FC = () => {
         style={{ maxWidth: '90vw' }}
         bodyStyle={{ maxHeight: '70vh', overflow: 'auto' }}
         footer={[
-          <Button 
-            key="cancel" 
+          <Button
+            key="cancel"
             onClick={() => {
               setIsImportModalOpen(false)
               setImportData([])
@@ -746,12 +787,7 @@ const Units: React.FC = () => {
           >
             Cancel
           </Button>,
-          <Button 
-            key="submit" 
-            type="primary" 
-            loading={loading}
-            onClick={handleImportOk}
-          >
+          <Button key="submit" type="primary" loading={loading} onClick={handleImportOk}>
             Import Units
           </Button>
         ]}
@@ -775,9 +811,9 @@ const Units: React.FC = () => {
 
           {/* Responsive form controls */}
           <div style={{ marginBottom: 16 }}>
-            <div 
-              style={{ 
-                display: 'grid', 
+            <div
+              style={{
+                display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: '16px',
                 alignItems: 'end'
@@ -831,18 +867,20 @@ const Units: React.FC = () => {
               <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                 Double-click on any cell to edit. Red borders indicate missing required fields.
               </Paragraph>
-              
+
               {/* Responsive table container */}
-              <div style={{ 
-                width: '100%', 
-                overflow: 'auto',
-                border: '1px solid #f0f0f0',
-                borderRadius: '4px',
-                marginTop: 8
-              }}>
+              <div
+                style={{
+                  width: '100%',
+                  overflow: 'auto',
+                  border: '1px solid #f0f0f0',
+                  borderRadius: '4px',
+                  marginTop: 8
+                }}
+              >
                 <Table
                   size="small"
-                  pagination={{ 
+                  pagination={{
                     pageSize: 5,
                     responsive: true,
                     showSizeChanger: false,
@@ -954,7 +992,9 @@ const Units: React.FC = () => {
                         <Select
                           size="small"
                           value={text}
-                          onChange={(val) => handlePreviewCellChange(record.previewId, 'status', val)}
+                          onChange={(val) =>
+                            handlePreviewCellChange(record.previewId, 'status', val)
+                          }
                           style={{ width: '100%', minWidth: '80px' }}
                           dropdownMatchSelectWidth={false}
                         >
@@ -1007,8 +1047,8 @@ const Units: React.FC = () => {
                   style={{ minWidth: '600px' }}
                   components={{
                     header: {
-                      cell: (props: any) => (
-                        <th {...props} style={{ ...props.style, whiteSpace: 'nowrap' }} />
+                      cell: ({ style, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
+                        <th {...props} style={{ ...style, whiteSpace: 'nowrap' }} />
                       )
                     }
                   }}

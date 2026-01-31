@@ -35,8 +35,14 @@ const api = {
   letters: {
     getAll: () => ipcRenderer.invoke('get-letters'),
     getById: (id: number) => ipcRenderer.invoke('get-letter', id),
-    createBatch: (params: { projectId: number; financialYear: string; dueDate: string }) =>
-      ipcRenderer.invoke('create-batch-letters', params),
+    createBatch: (params: {
+      projectId: number
+      unitIds?: number[]
+      financialYear: string
+      letterDate: string
+      dueDate: string
+      addOns?: { addon_name: string; addon_amount: number }[]
+    }) => ipcRenderer.invoke('create-batch-letters', params),
     delete: (id: number) => ipcRenderer.invoke('delete-letter', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-letters', ids),
     generatePdf: (id: number) => ipcRenderer.invoke('generate-letter-pdf', id),

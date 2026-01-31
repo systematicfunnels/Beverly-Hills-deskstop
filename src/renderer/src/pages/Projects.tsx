@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -11,14 +11,18 @@ import {
   Card,
   Select,
   Tag,
-  Tooltip
+  Tooltip,
+  Typography,
+  Tabs,
+  List
 } from 'antd'
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   UploadOutlined,
-  SearchOutlined
+  SearchOutlined,
+  BankOutlined
 } from '@ant-design/icons'
 import { IndianRupee } from 'lucide-react'
 import { Project } from '@preload/types'
@@ -26,6 +30,8 @@ import { readExcelFile } from '../utils/excelReader'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
 
 const { Option } = Select
+const { TabPane } = Tabs
+const { Text } = Typography
 
 const Projects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([])
@@ -40,6 +46,10 @@ const Projects: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [cityFilter, setCityFilter] = useState<string | null>(null)
+
+  // Import summary state
+  const [importSummary, setImportSummary] = useState<Partial<Project>[]>([])
+  const [showImportSummary, setShowImportSummary] = useState(false)
 
   const [form] = Form.useForm()
 
@@ -60,17 +70,42 @@ const Projects: React.FC = () => {
     fetchProjects()
   }, [])
 
-  // Filtered data
-  const filteredProjects = projects.filter((p) => {
-    const matchesSearch = !searchText || p.name.toLowerCase().includes(searchText.toLowerCase())
-    const projectStatus = p.status || 'Inactive'
-    const matchesStatus = !statusFilter || projectStatus === statusFilter
-    const matchesCity = !cityFilter || p.city === cityFilter
-    return matchesSearch && matchesStatus && matchesCity
-  })
-
   // Get unique cities for filter
-  const uniqueCities = Array.from(new Set(projects.map((p) => p.city).filter(Boolean)))
+  const uniqueCities = useMemo(() => {
+    return Array.from(new Set(projects.map((p) => p.city).filter(Boolean))).sort()
+  }, [projects])
+
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return searchText || statusFilter || cityFilter
+  }, [searchText, statusFilter, cityFilter])
+
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    setSearchText('')
+    setStatusFilter(null)
+    setCityFilter(null)
+  }, [])
+
+  // Filtered data
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => {
+      const matchesSearch =
+        !searchText ||
+        p.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        p.address?.toLowerCase().includes(searchText.toLowerCase()) ||
+        p.city?.toLowerCase().includes(searchText.toLowerCase())
+      const projectStatus = p.status || 'Inactive'
+      const matchesStatus = !statusFilter || projectStatus === statusFilter
+      const matchesCity = !cityFilter || p.city === cityFilter
+      return matchesSearch && matchesStatus && matchesCity
+    })
+  }, [projects, searchText, statusFilter, cityFilter])
+
+  // Get selected projects for bulk delete preview
+  const selectedProjects = useMemo(() => {
+    return projects.filter((p) => selectedRowKeys.includes(p.id!))
+  }, [projects, selectedRowKeys])
 
   const handleAdd = (): void => {
     setEditingProject(null)
@@ -149,9 +184,38 @@ const Projects: React.FC = () => {
         return false
       }
 
+      setImportSummary(projectsToImport)
+
       Modal.confirm({
         title: `Import ${projectsToImport.length} projects?`,
-        content: 'This will add new projects to the database.',
+        content: (
+          <div>
+            <p>This will add new projects to the database.</p>
+            {projectsToImport.length <= 5 && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="secondary">Projects to import:</Text>
+                <ul style={{ margin: '4px 0 0 20px', fontSize: '12px' }}>
+                  {projectsToImport.map((p, idx) => (
+                    <li key={idx}>{p.name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {projectsToImport.length > 5 && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="secondary">
+                  Showing 5 of {projectsToImport.length} projects to import
+                </Text>
+                <ul style={{ margin: '4px 0 0 20px', fontSize: '12px' }}>
+                  {projectsToImport.slice(0, 5).map((p, idx) => (
+                    <li key={idx}>{p.name}</li>
+                  ))}
+                  <li>...and {projectsToImport.length - 5} more</li>
+                </ul>
+              </div>
+            )}
+          </div>
+        ),
         onOk: async () => {
           setLoading(true)
           try {
@@ -160,7 +224,24 @@ const Projects: React.FC = () => {
               await window.api.projects.create(project as Project)
               count++
             }
-            message.success(`Successfully imported ${count} projects`)
+
+            message.success({
+              content: (
+                <span>
+                  Successfully imported {count} projects.{' '}
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setShowImportSummary(true)}
+                    style={{ padding: 0, height: 'auto' }}
+                  >
+                    View details
+                  </Button>
+                </span>
+              ),
+              duration: 5
+            })
+
             fetchProjects()
           } catch (error) {
             message.error('Failed to import some projects')
@@ -184,7 +265,11 @@ const Projects: React.FC = () => {
 
   const handleEdit = (record: Project): void => {
     setEditingProject(record)
-    form.setFieldsValue(record)
+    form.setFieldsValue({
+      ...record,
+      status: record.status || 'Active',
+      city: record.city || 'Ahmedabad'
+    })
     setIsModalOpen(true)
   }
 
@@ -212,8 +297,25 @@ const Projects: React.FC = () => {
   const handleBulkDelete = (): void => {
     Modal.confirm({
       title: `Delete ${selectedRowKeys.length} projects?`,
-      content:
-        'This action cannot be undone. All related units, maintenance letters, and payments will also be deleted.',
+      content: (
+        <div>
+          <p>
+            This action cannot be undone. All related units, maintenance letters, and payments will
+            also be deleted.
+          </p>
+          {selectedProjects.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary">Projects to delete:</Text>
+              <ul style={{ margin: '4px 0 0 20px', fontSize: '12px' }}>
+                {selectedProjects.slice(0, 5).map((p) => (
+                  <li key={p.id}>{p.name}</li>
+                ))}
+                {selectedProjects.length > 5 && <li>...and {selectedProjects.length - 5} more</li>}
+              </ul>
+            </div>
+          )}
+        </div>
+      ),
       okText: 'Delete All',
       okType: 'danger',
       onOk: async () => {
@@ -247,6 +349,12 @@ const Projects: React.FC = () => {
     }
   }
 
+  const handleViewUnits = useCallback((projectId: number, projectName: string) => {
+    // Navigate to units page with project filter
+    // This assumes you have routing set up
+    window.location.href = `/units?projectId=${projectId}&projectName=${encodeURIComponent(projectName)}`
+  }, [])
+
   const columns = [
     {
       title: 'Name',
@@ -259,12 +367,26 @@ const Projects: React.FC = () => {
       key: 'address',
       ellipsis: true
     },
-    { title: 'City', dataIndex: 'city', key: 'city' },
+    {
+      title: 'City',
+      dataIndex: 'city',
+      key: 'city'
+    },
     {
       title: 'Units',
       dataIndex: 'unit_count',
       key: 'unit_count',
-      align: 'center' as const
+      align: 'center' as const,
+      render: (count: number, record: Project) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => handleViewUnits(record.id!, record.name)}
+          disabled={!count || count === 0}
+        >
+          {count || 0}
+        </Button>
+      )
     },
     {
       title: 'Status',
@@ -287,10 +409,23 @@ const Projects: React.FC = () => {
       render: (_: unknown, record: Project) => (
         <Space size="middle">
           <Tooltip title="Manage Rates">
-            <Button icon={<IndianRupee size={14} />} onClick={() => handleRates(record)} />
+            <Button
+              icon={<IndianRupee size={14} />}
+              onClick={() => handleRates(record)}
+              size="small"
+            />
           </Tooltip>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-          <Button icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id!)} />
+          <Tooltip title="Edit Project">
+            <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
+          </Tooltip>
+          <Tooltip title="Delete Project">
+            <Button
+              icon={<DeleteOutlined />}
+              danger
+              onClick={() => handleDelete(record.id!)}
+              size="small"
+            />
+          </Tooltip>
         </Space>
       )
     }
@@ -307,7 +442,9 @@ const Projects: React.FC = () => {
             marginBottom: 16
           }}
         >
-          <h2 style={{ margin: 0 }}>Projects</h2>
+          <Typography.Title level={2} style={{ margin: 0 }}>
+            Projects
+          </Typography.Title>
           <Space>
             {selectedRowKeys.length > 0 && (
               <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
@@ -327,13 +464,14 @@ const Projects: React.FC = () => {
           </Space>
         </div>
 
-        <Space wrap>
+        <Space wrap style={{ marginBottom: 8 }}>
           <Input
-            placeholder="Search Project Name..."
+            placeholder="Search Project Name, Address, or City..."
             prefix={<SearchOutlined />}
             style={{ width: 250 }}
             allowClear
             onChange={(e) => setSearchText(e.target.value)}
+            value={searchText}
           />
           <Select
             placeholder="Status"
@@ -359,6 +497,40 @@ const Projects: React.FC = () => {
             ))}
           </Select>
         </Space>
+
+        {/* Filter Summary Chips */}
+        {hasActiveFilters && (
+          <div style={{ marginTop: 16 }}>
+            <Space wrap>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Active filters:
+              </Text>
+              {searchText && (
+                <Tag closable onClose={() => setSearchText('')} style={{ fontSize: '12px' }}>
+                  Search: &quot;{searchText}&quot;
+                </Tag>
+              )}
+              {statusFilter && (
+                <Tag closable onClose={() => setStatusFilter(null)} style={{ fontSize: '12px' }}>
+                  Status: {statusFilter}
+                </Tag>
+              )}
+              {cityFilter && (
+                <Tag closable onClose={() => setCityFilter(null)} style={{ fontSize: '12px' }}>
+                  City: {cityFilter}
+                </Tag>
+              )}
+              <Button
+                type="link"
+                size="small"
+                onClick={clearAllFilters}
+                style={{ fontSize: '12px', padding: 0, height: 'auto' }}
+              >
+                Clear all
+              </Button>
+            </Space>
+          </div>
+        )}
       </Card>
 
       <Table
@@ -370,8 +542,10 @@ const Projects: React.FC = () => {
         columns={columns}
         rowKey="id"
         loading={loading}
+        pagination={{ pageSize: 10 }}
       />
 
+      {/* Project Add/Edit Modal */}
       <Modal
         title={editingProject ? 'Edit Project' : 'Add Project'}
         open={isModalOpen}
@@ -380,34 +554,111 @@ const Projects: React.FC = () => {
         width={700}
       >
         <Form form={form} layout="vertical" initialValues={{ status: 'Active', city: 'Ahmedabad' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <Form.Item
-              name="name"
-              label="Project Name"
-              rules={[{ required: true, message: 'Please enter project name' }]}
-              style={{ gridColumn: 'span 2' }}
-            >
-              <Input />
-            </Form.Item>
+          <Tabs defaultActiveKey="basic">
+            <TabPane tab="Basic Information" key="basic">
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                  marginTop: 16
+                }}
+              >
+                <Form.Item
+                  name="name"
+                  label="Project Name"
+                  rules={[{ required: true, message: 'Please enter project name' }]}
+                  style={{ gridColumn: 'span 2' }}
+                >
+                  <Input />
+                </Form.Item>
 
-            <Form.Item name="address" label="Address" style={{ gridColumn: 'span 2' }}>
-              <Input.TextArea rows={2} />
-            </Form.Item>
+                <Form.Item name="address" label="Address" style={{ gridColumn: 'span 2' }}>
+                  <Input.TextArea rows={2} />
+                </Form.Item>
 
-            <Form.Item name="city" label="City">
-              <Input />
-            </Form.Item>
+                <Form.Item name="city" label="City">
+                  <Input />
+                </Form.Item>
 
-            <Form.Item name="status" label="Status">
-              <Select>
-                <Option value="Active">Active</Option>
-                <Option value="Inactive">Inactive</Option>
-              </Select>
-            </Form.Item>
-          </div>
+                <Form.Item name="state" label="State">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item name="pincode" label="Pincode">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item name="status" label="Status">
+                  <Select>
+                    <Option value="Active">Active</Option>
+                    <Option value="Inactive">Inactive</Option>
+                  </Select>
+                </Form.Item>
+              </div>
+            </TabPane>
+
+            <TabPane tab="Bank Details" key="bank" icon={<BankOutlined />}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                  marginTop: 16
+                }}
+              >
+                <Form.Item name="bank_name" label="Bank Name">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item name="account_no" label="Account Number">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item name="ifsc_code" label="IFSC Code">
+                  <Input />
+                </Form.Item>
+              </div>
+            </TabPane>
+          </Tabs>
         </Form>
       </Modal>
 
+      {/* Import Summary Modal */}
+      <Modal
+        title="Import Summary"
+        open={showImportSummary}
+        onCancel={() => setShowImportSummary(false)}
+        footer={[
+          <Button key="close" onClick={() => setShowImportSummary(false)}>
+            Close
+          </Button>
+        ]}
+        width={600}
+      >
+        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+          <List
+            dataSource={importSummary}
+            renderItem={(project, index) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={`${index + 1}. ${project.name}`}
+                  description={
+                    <div>
+                      {project.city && <div>City: {project.city}</div>}
+                      {project.address && <div>Address: {project.address}</div>}
+                      {project.bank_name && <div>Bank: {project.bank_name}</div>}
+                      {project.account_no && <div>Account: {project.account_no}</div>}
+                    </div>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </div>
+      </Modal>
+
+      {/* Maintenance Rates Modal */}
       {selectedProject && (
         <MaintenanceRateModal
           visible={isRateModalOpen}

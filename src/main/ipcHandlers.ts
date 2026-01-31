@@ -87,12 +87,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'create-batch-letters',
-    (_, { projectId, financialYear, letterDate, dueDate, addOns }): boolean => {
+    (_, { projectId, unitIds, financialYear, letterDate, dueDate, addOns }): boolean => {
       return maintenanceLetterService.createBatch(
         projectId,
         financialYear,
         letterDate,
         dueDate,
+        unitIds,
         addOns
       )
     }
