@@ -192,22 +192,23 @@ class ProjectService {
     const paymentWhere: string[] = []
     const paymentParams: (string | number)[] = []
     if (projectId) {
-      paymentWhere.push('project_id = ?')
+      paymentWhere.push('p.project_id = ?')
       paymentParams.push(projectId)
     }
     if (financialYear) {
-      paymentWhere.push('financial_year = ?')
+      paymentWhere.push('COALESCE(p.financial_year, l.financial_year) = ?')
       paymentParams.push(financialYear)
     }
     if (unitType) {
-      paymentWhere.push('unit_id IN (SELECT id FROM units WHERE unit_type = ?)')
+      paymentWhere.push('p.unit_id IN (SELECT id FROM units WHERE unit_type = ?)')
       paymentParams.push(unitType)
     }
     if (status) {
-      paymentWhere.push('project_id IN (SELECT id FROM projects WHERE status = ?)')
+      paymentWhere.push('p.project_id IN (SELECT id FROM projects WHERE status = ?)')
       paymentParams.push(status)
     }
     const paymentFilterStr = paymentWhere.length > 0 ? `WHERE ${paymentWhere.join(' AND ')}` : ''
+    const paymentFromStr = 'FROM payments p LEFT JOIN maintenance_letters l ON p.letter_id = l.id'
 
     const projectsCount =
       dbService.get<{ count: number }>(
@@ -229,45 +230,11 @@ class ProjectService {
 
     const totalCollected =
       dbService.get<{ total: number }>(
-        `SELECT SUM(payment_amount) as total FROM payments ${paymentFilterStr}`,
+        `SELECT SUM(p.payment_amount) as total ${paymentFromStr} ${paymentFilterStr}`,
         paymentParams
       )?.total || 0
 
-    // Calculate collected this year (FY starting April 1st)
-    let fiscalYearStart, fiscalYearEnd
-    if (financialYear) {
-      const startYear = parseInt(financialYear.split('-')[0])
-      fiscalYearStart = `${startYear}-04-01`
-      fiscalYearEnd = `${startYear + 1}-03-31`
-    } else {
-      const now = new Date()
-      const currentMonth = now.getMonth()
-      const fiscalYearStartYear = currentMonth < 3 ? now.getFullYear() - 1 : now.getFullYear()
-      fiscalYearStart = `${fiscalYearStartYear}-04-01`
-      fiscalYearEnd = `${fiscalYearStartYear + 1}-03-31`
-    }
-
-    const collectedThisYearParams: (string | number)[] = [fiscalYearStart, fiscalYearEnd]
-    let collectedThisYearWhere = 'WHERE (payment_date BETWEEN ? AND ?)'
-
-    if (projectId) {
-      collectedThisYearWhere += ' AND project_id = ?'
-      collectedThisYearParams.push(projectId)
-    }
-    if (unitType) {
-      collectedThisYearWhere += ' AND unit_id IN (SELECT id FROM units WHERE unit_type = ?)'
-      collectedThisYearParams.push(unitType)
-    }
-    if (status) {
-      collectedThisYearWhere += ' AND project_id IN (SELECT id FROM projects WHERE status = ?)'
-      collectedThisYearParams.push(status)
-    }
-
-    const collectedThisYear =
-      dbService.get<{ total: number }>(
-        `SELECT SUM(payment_amount) as total FROM payments ${collectedThisYearWhere}`,
-        collectedThisYearParams
-      )?.total || 0
+    const collectedThisYear = totalCollected
 
     // Calculate pending units
     const pendingUnits =
@@ -279,7 +246,7 @@ class ProjectService {
           SELECT unit_id, SUM(final_amount) as billed FROM maintenance_letters ${letterFilterStr} GROUP BY unit_id
         ) b
         LEFT JOIN (
-          SELECT unit_id, SUM(payment_amount) as paid FROM payments ${paymentFilterStr} GROUP BY unit_id
+          SELECT p.unit_id, SUM(p.payment_amount) as paid ${paymentFromStr} ${paymentFilterStr} GROUP BY p.unit_id
         ) p ON b.unit_id = p.unit_id
         WHERE billed > COALESCE(paid, 0) + 0.01
       )

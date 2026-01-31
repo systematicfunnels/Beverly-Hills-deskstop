@@ -37,7 +37,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 
-import { MaintenanceLetter, Project, LetterAddOn } from '@preload/types'
+import { MaintenanceLetter, Project, LetterAddOn, Unit } from '@preload/types'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -84,6 +84,10 @@ const Billing: React.FC = () => {
   const [pdfProgress, setPdfProgress] = useState<PdfProgress | null>(null)
   const [selectedUnitIds, setSelectedUnitIds] = useState<number[]>([])
   const [batchModalStep, setBatchModalStep] = useState<'config' | 'units'>('config')
+  const [projectUnits, setProjectUnits] = useState<Unit[]>([])
+  const [unitsLoading, setUnitsLoading] = useState(false)
+  const [unitSearchText, setUnitSearchText] = useState('')
+  const batchProjectId = Form.useWatch('project_id', form)
 
   const fetchData = async (): Promise<void> => {
     setLoading(true)
@@ -119,6 +123,35 @@ const Billing: React.FC = () => {
     }
   }, [location])
 
+  useEffect(() => {
+    if (!isModalOpen) {
+      setProjectUnits([])
+      setUnitsLoading(false)
+      setUnitSearchText('')
+      return
+    }
+    if (!batchProjectId) {
+      setProjectUnits([])
+      return
+    }
+    setUnitsLoading(true)
+    window.api.units
+      .getByProject(batchProjectId)
+      .then((data) => setProjectUnits(data))
+      .catch(() => {
+        message.error('Failed to load units for selected project')
+        setProjectUnits([])
+      })
+      .finally(() => setUnitsLoading(false))
+  }, [batchProjectId, isModalOpen])
+
+  useEffect(() => {
+    if (!isModalOpen) return
+    if (passedUnitIds.length === 0) return
+    if (selectedUnitIds.length > 0) return
+    setSelectedUnitIds(passedUnitIds)
+  }, [isModalOpen, passedUnitIds, selectedUnitIds])
+
   // Calculate filter statistics
   const filterStats = useMemo(() => {
     const pending = letters.filter(l => l.status === 'Pending').length
@@ -134,14 +167,14 @@ const Billing: React.FC = () => {
   const hasActiveFilters = useMemo(() => {
     return searchText || 
            selectedProject !== null || 
-           selectedYear !== null || 
+           selectedYear !== defaultFY || 
            selectedStatus !== null || 
            selectedUnitType !== null || 
            amountRange[0] !== null || 
            amountRange[1] !== null || 
            dueDateRange[0] !== null || 
            dueDateRange[1] !== null
-  }, [searchText, selectedProject, selectedYear, selectedStatus, selectedUnitType, amountRange, dueDateRange])
+  }, [searchText, selectedProject, selectedYear, selectedStatus, selectedUnitType, amountRange, dueDateRange, defaultFY])
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
@@ -386,10 +419,23 @@ const Billing: React.FC = () => {
   })
 
   const uniqueYears = useMemo(() => {
-    return Array.from(new Set(letters.map((l) => l.financial_year)))
-      .sort()
-      .reverse()
-  }, [letters])
+    const yearSet = new Set(letters.map((l) => l.financial_year).filter(Boolean))
+    yearSet.add(defaultFY)
+    const nextFY = `${currentYear + 1}-${(currentYear + 2).toString().slice(2)}`
+    yearSet.add(nextFY)
+    return Array.from(yearSet).sort().reverse()
+  }, [letters, defaultFY, currentYear])
+
+  const filteredProjectUnits = useMemo(() => {
+    const q = unitSearchText.trim().toLowerCase()
+    if (!q) return projectUnits
+    return projectUnits.filter((u) => {
+      return (
+        (u.unit_number || '').toLowerCase().includes(q) ||
+        (u.owner_name || '').toLowerCase().includes(q)
+      )
+    })
+  }, [projectUnits, unitSearchText])
 
   // Get selected project name
   const selectedProjectName = useMemo(() => {
@@ -881,7 +927,17 @@ const Billing: React.FC = () => {
                   rules={[{ required: true, message: 'Please enter financial year' }]}
                   style={{ gridColumn: 'span 2' }}
                 >
-                  <Input placeholder="2024-25" />
+                  <Select
+                    placeholder="Select Financial Year"
+                    showSearch
+                    optionFilterProp="children"
+                  >
+                    {uniqueYears.map((year) => (
+                      <Option key={year} value={year}>
+                        {year}
+                      </Option>
+                    ))}
+                  </Select>
                 </Form.Item>
 
                 <Form.Item
@@ -906,23 +962,34 @@ const Billing: React.FC = () => {
                   {(fields, { add, remove }) => (
                     <div style={{ gridColumn: 'span 2' }}>
                       {fields.map(({ key, name, ...restField }) => (
-                        <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                        <Space
+                          key={key}
+                          wrap
+                          style={{ display: 'flex', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}
+                          align="baseline"
+                        >
                           <Form.Item
                             {...restField}
                             name={[name, 'addon_name']}
                             rules={[{ required: true, message: 'Name required' }]}
+                            style={{ flex: '1 1 220px', marginBottom: 0 }}
                           >
-                            <Input placeholder="Addon Name (e.g. Penalty)" />
+                            <Input placeholder="Addon Name (e.g. Penalty)" style={{ width: '100%' }} />
                           </Form.Item>
                           <Form.Item
                             {...restField}
                             name={[name, 'addon_amount']}
                             rules={[{ required: true, message: 'Amount required' }]}
+                            style={{ width: 140, marginBottom: 0 }}
                           >
-                            <InputNumber placeholder="Amount" style={{ width: 120 }} prefix="₹" />
+                            <InputNumber placeholder="Amount" style={{ width: '100%' }} prefix="₹" />
                           </Form.Item>
-                          <Form.Item {...restField} name={[name, 'remarks']}>
-                            <Input placeholder="Remarks" />
+                          <Form.Item
+                            {...restField}
+                            name={[name, 'remarks']}
+                            style={{ flex: '1 1 220px', marginBottom: 0 }}
+                          >
+                            <Input placeholder="Remarks" style={{ width: '100%' }} />
                           </Form.Item>
                           <Button
                             type="text"
@@ -944,16 +1011,50 @@ const Billing: React.FC = () => {
             </Form>
           </TabPane>
           
-          <TabPane tab="2. Select Units (Optional)" key="units" disabled={!form.getFieldValue('project_id')}>
+          <TabPane tab="2. Select Units (Optional)" key="units" disabled={!batchProjectId}>
             <Alert
               message="Select specific units to generate letters for, or leave empty to generate for all units in the project"
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
             />
-            <Text type="secondary">
-              Unit selection is optional. If no units are selected, letters will be generated for all active units in the project.
-            </Text>
+            <Space wrap style={{ width: '100%', marginBottom: 12 }} size="middle" align="center">
+              <Input
+                placeholder="Search unit / owner..."
+                style={{ width: 260 }}
+                value={unitSearchText}
+                onChange={(e) => setUnitSearchText(e.target.value)}
+                allowClear
+              />
+              <Button
+                onClick={() => setSelectedUnitIds(projectUnits.map((u) => u.id as number))}
+                disabled={projectUnits.length === 0}
+              >
+                Select all
+              </Button>
+              <Button onClick={() => setSelectedUnitIds([])} disabled={selectedUnitIds.length === 0}>
+                Clear
+              </Button>
+              <Text type="secondary">
+                Selected: {selectedUnitIds.length} / {projectUnits.length}
+              </Text>
+            </Space>
+            <Table
+              size="small"
+              loading={unitsLoading}
+              dataSource={filteredProjectUnits}
+              rowKey="id"
+              pagination={{ pageSize: 8 }}
+              scroll={{ y: 280 }}
+              rowSelection={{
+                selectedRowKeys: selectedUnitIds,
+                onChange: (keys) => setSelectedUnitIds(keys as number[])
+              }}
+              columns={[
+                { title: 'Unit', dataIndex: 'unit_number', key: 'unit_number', width: 140 },
+                { title: 'Owner', dataIndex: 'owner_name', key: 'owner_name' }
+              ]}
+            />
           </TabPane>
         </Tabs>
       </Modal>
