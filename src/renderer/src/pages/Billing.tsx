@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -26,6 +26,7 @@ import {
   PlusOutlined,
   FolderOpenOutlined,
   DeleteOutlined,
+  EditOutlined,
   InfoCircleOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined
@@ -63,7 +64,7 @@ const Billing: React.FC = () => {
   const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
   const [selectedYear, setSelectedYear] = useState<string | null>(defaultFY)
 
-  const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
+  const [selectedUnitType, setSelectedUnitType] = useState<string | null>('All')
   const [amountRange, setAmountRange] = useState<[number | null, number | null]>([null, null])
   const [dueDateRange, setDueDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
     null,
@@ -77,6 +78,7 @@ const Billing: React.FC = () => {
   const [currentLetter, setCurrentLetter] = useState<MaintenanceLetter | null>(null)
   const [form] = Form.useForm()
   const location = useLocation()
+  const navigate = useNavigate()
   const [passedUnitIds, setPassedUnitIds] = useState<number[]>([])
 
   // PDF generation state
@@ -170,7 +172,7 @@ const Billing: React.FC = () => {
       selectedProject !== null ||
       selectedYear !== defaultFY ||
       selectedStatus !== null ||
-      selectedUnitType !== null ||
+      (selectedUnitType !== null && selectedUnitType !== 'All') ||
       amountRange[0] !== null ||
       amountRange[1] !== null ||
       dueDateRange[0] !== null ||
@@ -193,7 +195,7 @@ const Billing: React.FC = () => {
     setSelectedProject(null)
     setSelectedYear(defaultFY)
     setSelectedStatus(null)
-    setSelectedUnitType(null)
+    setSelectedUnitType('All')
     setAmountRange([null, null])
     setDueDateRange([null, null])
     setSelectedRowKeys([])
@@ -266,6 +268,25 @@ const Billing: React.FC = () => {
         const errorMessage = messageText.includes('Error:')
           ? messageText.split('Error:')[1].trim()
           : messageText || 'Failed to generate maintenance letters'
+
+        if (
+          errorMessage.includes('No maintenance rate found for this Project and Financial Year')
+        ) {
+          const projectId = form.getFieldValue('project_id') as number | undefined
+          Modal.confirm({
+            title: 'Maintenance rate missing',
+            content: errorMessage,
+            okText: 'Open Rates',
+            cancelText: 'Close',
+            onOk: () => {
+              setIsModalOpen(false)
+              setBatchModalStep('config')
+              navigate('/projects', { state: { openRatesProjectId: projectId } })
+            }
+          })
+          return
+        }
+
         message.error(errorMessage)
       } finally {
         setLoading(false)
@@ -295,6 +316,36 @@ const Billing: React.FC = () => {
       })
     } catch {
       message.error({ content: 'Failed to generate letter', key: 'pdf_gen' })
+    }
+  }
+
+  const handleEditLetter = async (record: MaintenanceLetter): Promise<void> => {
+    if (!record.id) return
+    try {
+      message.loading({ content: 'Loading letter...', key: 'letter_edit' })
+      form.resetFields()
+      setPassedUnitIds([record.unit_id])
+      setSelectedUnitIds([])
+      setBatchModalStep('config')
+      setIsModalOpen(true)
+
+      const addOns = await window.api.letters.getAddOns(record.id)
+
+      form.setFieldsValue({
+        project_id: record.project_id,
+        financial_year: record.financial_year,
+        letter_date: record.generated_date ? dayjs(record.generated_date) : dayjs(),
+        due_date: record.due_date ? dayjs(record.due_date) : dayjs().add(15, 'day'),
+        add_ons: (addOns || []).map((a: LetterAddOn) => ({
+          addon_name: a.addon_name,
+          addon_amount: a.addon_amount,
+          remarks: a.remarks
+        }))
+      })
+
+      message.success({ content: 'Letter ready to edit', key: 'letter_edit' })
+    } catch {
+      message.error({ content: 'Failed to load letter for editing', key: 'letter_edit' })
     }
   }
 
@@ -415,7 +466,8 @@ const Billing: React.FC = () => {
       (selectedStatus === 'Pending' && letter.status === 'Pending' && !isOverdue) ||
       (selectedStatus === 'Overdue' && isOverdue)
 
-    const matchUnitType = !selectedUnitType || letter.unit_type === selectedUnitType
+    const matchUnitType =
+      !selectedUnitType || selectedUnitType === 'All' || letter.unit_type === selectedUnitType
 
     const matchMinAmount = amountRange[0] === null || letter.final_amount >= amountRange[0]
     const matchMaxAmount = amountRange[1] === null || letter.final_amount <= amountRange[1]
@@ -573,6 +625,14 @@ const Billing: React.FC = () => {
             PDF
           </Button>
           <Button
+            icon={<EditOutlined />}
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleEditLetter(record)
+            }}
+          />
+          <Button
             icon={<DeleteOutlined />}
             size="small"
             danger
@@ -688,9 +748,10 @@ const Billing: React.FC = () => {
               placeholder="Unit Type"
               style={{ width: 140 }}
               allowClear
-              onChange={setSelectedUnitType}
+              onChange={(val) => setSelectedUnitType(val ?? 'All')}
               value={selectedUnitType}
             >
+              <Option value="All">All</Option>
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
             </Select>
@@ -762,9 +823,10 @@ const Billing: React.FC = () => {
                     Project: {selectedProjectName}
                   </Tag>
                 )}
-                {selectedYear !== null && selectedYear !== defaultFY && (
+                {(selectedYear === null ||
+                  (selectedYear !== null && selectedYear !== defaultFY)) && (
                   <Tag closable onClose={() => setSelectedYear(defaultFY)}>
-                    FY: {selectedYear}
+                    FY: {selectedYear ?? 'All'}
                   </Tag>
                 )}
                 {selectedStatus && (
@@ -772,8 +834,8 @@ const Billing: React.FC = () => {
                     Status: {selectedStatus}
                   </Tag>
                 )}
-                {selectedUnitType && (
-                  <Tag closable onClose={() => setSelectedUnitType(null)}>
+                {selectedUnitType && selectedUnitType !== 'All' && (
+                  <Tag closable onClose={() => setSelectedUnitType('All')}>
                     Type: {selectedUnitType}
                   </Tag>
                 )}

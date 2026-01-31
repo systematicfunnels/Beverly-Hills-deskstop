@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -52,6 +53,7 @@ const Projects: React.FC = () => {
   const [showImportSummary, setShowImportSummary] = useState(false)
 
   const [form] = Form.useForm()
+  const location = useLocation()
 
   const fetchProjects = async (): Promise<void> => {
     setLoading(true)
@@ -69,6 +71,19 @@ const Projects: React.FC = () => {
   useEffect(() => {
     fetchProjects()
   }, [])
+
+  useEffect(() => {
+    const state = location.state as { openRatesProjectId?: number } | null
+    const targetProjectId = state?.openRatesProjectId
+    if (!targetProjectId) return
+
+    const p = projects.find((x) => x.id === targetProjectId)
+    if (!p) return
+
+    setSelectedProject(p)
+    setIsRateModalOpen(true)
+    window.history.replaceState({}, document.title)
+  }, [location, projects])
 
   // Get unique cities for filter
   const uniqueCities = useMemo(() => {
