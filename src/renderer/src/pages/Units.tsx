@@ -25,9 +25,9 @@ import {
   DeleteOutlined,
   UploadOutlined,
   FilePdfOutlined,
-  DollarOutlined,
   SolutionOutlined
 } from '@ant-design/icons'
+import { IndianRupee } from 'lucide-react'
 import { Unit, Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 
@@ -537,17 +537,17 @@ const Units: React.FC = () => {
       align: 'right' as const,
       render: (_: unknown, record: Unit) => (
         <Space>
-          <Tooltip title="Generate Letter">
+          <Tooltip title="Generate maintenance letter">
             <Button
               size="small"
               icon={<FilePdfOutlined />}
               onClick={() => navigate('/billing', { state: { unitId: record.id } })}
             />
           </Tooltip>
-          <Tooltip title="Add Payment">
+          <Tooltip title="Record Payment">
             <Button
               size="small"
-              icon={<DollarOutlined />}
+              icon={<IndianRupee size={16} />}
               onClick={() => navigate('/payments', { state: { unitId: record.id } })}
             />
           </Tooltip>

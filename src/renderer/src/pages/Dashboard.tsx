@@ -24,7 +24,7 @@ import {
   QuestionCircleOutlined
 } from '@ant-design/icons'
 import { IndianRupee } from 'lucide-react'
-import { Project } from '@preload/types'
+import { MaintenanceLetter, Project } from '@preload/types'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -52,6 +52,7 @@ const Dashboard: React.FC = () => {
   const currentYear = dayjs().month() < 3 ? dayjs().year() - 1 : dayjs().year()
   const defaultFY = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
   const [selectedFY, setSelectedFY] = useState<string>(defaultFY)
+  const [availableFYs, setAvailableFYs] = useState<string[]>([])
 
   const [stats, setStats] = useState({
     projects: 0,
@@ -75,6 +76,23 @@ const Dashboard: React.FC = () => {
   }, [])
 
   useEffect(() => {
+    const fetchYears = async (): Promise<void> => {
+      try {
+        const letters: MaintenanceLetter[] = await window.api.letters.getAll()
+        const yearSet = new Set(letters.map((l) => l.financial_year).filter(Boolean))
+        yearSet.add(defaultFY)
+        const nextFY = `${currentYear + 1}-${(currentYear + 2).toString().slice(2)}`
+        yearSet.add(nextFY)
+        const years = Array.from(yearSet).sort().reverse()
+        setAvailableFYs(years)
+      } catch {
+        setAvailableFYs([])
+      }
+    }
+    fetchYears()
+  }, [currentYear, defaultFY])
+
+  useEffect(() => {
     const fetchDashboardData = async (): Promise<void> => {
       setLoading(true)
       try {
@@ -96,7 +114,7 @@ const Dashboard: React.FC = () => {
   }, [selectedProject, selectedFY, selectedUnitType, selectedStatus])
 
   // Generate a range of financial years for the filter
-  const financialYears = useMemo(() => {
+  const fallbackFinancialYears = useMemo(() => {
     const years: string[] = []
     const startYear = 2024 // Application start year
     const endYear = currentYear + 1
@@ -105,6 +123,8 @@ const Dashboard: React.FC = () => {
     }
     return years
   }, [currentYear])
+
+  const financialYears = availableFYs.length > 0 ? availableFYs : fallbackFinancialYears
 
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
