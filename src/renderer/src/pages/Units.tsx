@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Table,
   Button,
@@ -14,13 +14,14 @@ import {
   Typography,
   Card,
   Alert,
-  DividerProps
+  DividerProps,
+  Tag
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { Unit, Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 
-const { Title } = Typography
+const { Title, Text, Paragraph } = Typography
 const { Option } = Select
 const { Search } = Input
 
@@ -36,7 +37,6 @@ const Units: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
   const [selectedUnitType, setSelectedUnitType] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
-
   const [areaRange, setAreaRange] = useState<[number | null, number | null]>([null, null])
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -54,20 +54,38 @@ const Units: React.FC = () => {
 
   const [form] = Form.useForm()
 
+  // Memoized filter status for performance
+  const hasActiveFilters = useMemo(() => {
+    return searchText || selectedProject || selectedUnitType || statusFilter || areaRange[0] !== null || areaRange[1] !== null
+  }, [searchText, selectedProject, selectedUnitType, statusFilter, areaRange])
+
+  // Find project name by ID
+  const getProjectNameById = useCallback((id: number | null) => {
+    if (!id) return ''
+    const project = projects.find(p => p.id === id)
+    return project?.name || ''
+  }, [projects])
+
+  // Clear all filters
+  const clearAllFilters = useCallback(() => {
+    setSearchText('')
+    setSelectedProject(null)
+    setSelectedUnitType(null)
+    setStatusFilter(null)
+    setAreaRange([null, null])
+    setSelectedRowKeys([])
+  }, [])
+
   // Helper function to map a single row to a Unit object
   const mapRowToUnit = useCallback(
     (row: Record<string, unknown>, projectId: number | null): ImportUnitPreview | null => {
-      // Unique ID for preview editing
       const previewId = (row.__id as string) || Math.random().toString(36).substr(2, 9)
-
-      // Create a normalized version of the row with lowercase keys and trimmed values
       const normalizedRow: Record<string, unknown> = {}
       Object.keys(row).forEach((key) => {
         const normalizedKey = String(key).toLowerCase().trim()
         normalizedRow[normalizedKey] = row[key]
       })
 
-      // Helper to find value by multiple possible keys
       const getValue = (possibleKeys: string[]): unknown => {
         for (const key of possibleKeys) {
           if (
@@ -81,7 +99,6 @@ const Units: React.FC = () => {
         return undefined
       }
 
-      // Auto-detect project if not selected
       let effectiveProjectId = projectId
       if (!effectiveProjectId) {
         const projectName = String(getValue(['project', 'building', 'project name']) || '')
@@ -95,7 +112,6 @@ const Units: React.FC = () => {
         }
       }
 
-      // Try to find Unit Number - expanded search
       let unitNumber = String(
         getValue([
           'unit number',
@@ -118,10 +134,8 @@ const Units: React.FC = () => {
         ]) || ''
       ).trim()
 
-      // If unitNumber is empty and we should ignore it, return null
       if (!unitNumber && ignoreEmptyUnits) return null
 
-      // Try to find Owner Name - expanded search
       let ownerName = String(
         getValue([
           'owner',
@@ -139,7 +153,6 @@ const Units: React.FC = () => {
         ]) || ''
       ).trim()
 
-      // Fallback 1: Extract unit from owner name if it looks like "Name D-3/403" or "Name (A-101)"
       if (!unitNumber && ownerName) {
         const unitPattern = /([A-Z][-/\s]?\d+([-/\s]\d+)?)/i
         const match = ownerName.match(unitPattern)
@@ -149,7 +162,6 @@ const Units: React.FC = () => {
         }
       }
 
-      // Fallback 2: Scan ALL columns for anything that looks like a unit number if still empty
       if (!unitNumber) {
         const unitRegex = /^[A-Z][-/\s]?\d+([-/\s]\d+)?$/i
         for (const key of Object.keys(normalizedRow)) {
@@ -161,11 +173,7 @@ const Units: React.FC = () => {
         }
       }
 
-      // Final check for empty unit
       if (!unitNumber && ignoreEmptyUnits) return null
-
-      // If unitNumber is still empty, we still want to show the row but allow manual entry
-      // We only skip if the row is completely empty or just header text
       if (!unitNumber && !ownerName && Object.keys(row).length <= 1) return null
       if (unitNumber && /^(particulars|unit|flat|plot|id|no|shop|office)$/i.test(unitNumber))
         return null
@@ -191,10 +199,15 @@ const Units: React.FC = () => {
         previewId,
         project_id: effectiveProjectId || 0,
         unit_number: unitNumber,
-        unit_type: String(
-          getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
-            (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Bungalow')
-        ).trim(),
+        unit_type: (() => {
+          const raw = String(
+            getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
+              (normalizedRow['bungalow'] !== undefined ? 'Bungalow' : 'Plot')
+          ).trim().toLowerCase()
+          
+          if (['bungalow', 'yes', 'y', '1', 'true'].includes(raw)) return 'Bungalow'
+          return 'Plot' // Default to Plot for 'plot', 'no', 'n', '0', 'false' or any other value
+        })(),
         area_sqft: rawArea || defaultArea,
         owner_name: ownerName || '',
         status: String(getValue(['status', 'occupancy']) || 'Active').trim(),
@@ -208,7 +221,6 @@ const Units: React.FC = () => {
     if (importData.length > 0) {
       const preview = importData
         .map((row, index) => {
-          // Assign internal ID if not present
           if (!row.__id) row.__id = `row-${index}`
           return mapRowToUnit(row, importProjectId)
         })
@@ -314,7 +326,6 @@ const Units: React.FC = () => {
   }
 
   const handleImport = async (file: File): Promise<boolean> => {
-    // Pre-select project if one is already filtered in the main view
     if (selectedProject) {
       setImportProjectId(selectedProject)
     }
@@ -351,8 +362,6 @@ const Units: React.FC = () => {
 
     setLoading(true)
     try {
-      // Process mappedPreview into a format the backend can use to "explode" rows
-      // We need to identify which columns are years and which are add-ons
       const rowsToImport = mappedPreview.map((row) => {
         const years: {
           financial_year: string
@@ -361,7 +370,6 @@ const Units: React.FC = () => {
           add_ons: { name: string; amount: number }[]
         }[] = []
 
-        // Find all keys that look like financial years (e.g., "2018-19")
         const yearKeys = Object.keys(row).filter((key) => /^\d{4}-\d{2}$/.test(key))
 
         for (const year of yearKeys) {
@@ -369,15 +377,11 @@ const Units: React.FC = () => {
           const addons: { name: string; amount: number }[] = []
           let arrears = 0
 
-          // Check for Arrears column - can be "Arrears", "O/S", "Balance"
           const arrearsValue = row['Arrears'] || row['O/S'] || row['Balance'] || row['Outstanding']
           if (arrearsValue !== undefined) {
             arrears = Number(arrearsValue) || 0
           }
 
-          // Check for Penalty, NA Tax, Cable, etc. associated with this row/context
-          // In the wide format, we might have multiple penalty columns.
-          // For now, let's look for common addon names in the row
           const possibleAddons = [
             { key: 'NA Tax', name: 'NA Tax' },
             { key: 'N.A Tax', name: 'NA Tax' },
@@ -461,7 +465,11 @@ const Units: React.FC = () => {
       title: 'Type',
       dataIndex: 'unit_type',
       key: 'unit_type',
-      sorter: (a: Unit, b: Unit) => (a.unit_type || '').localeCompare(b.unit_type || '')
+      sorter: (a: Unit, b: Unit) => (a.unit_type || '').localeCompare(b.unit_type || ''),
+      render: (type: string) => {
+        const color = type === 'Bungalow' ? 'blue' : 'green'
+        return <Tag color={color}>{type || 'Plot'}</Tag>
+      }
     },
     {
       title: 'Owner',
@@ -494,7 +502,11 @@ const Units: React.FC = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      sorter: (a: Unit, b: Unit) => (a.status || '').localeCompare(b.status || '')
+      sorter: (a: Unit, b: Unit) => (a.status || '').localeCompare(b.status || ''),
+      render: (status: string) => {
+        const color = status === 'Active' ? 'success' : 'default'
+        return <Tag color={color}>{status || 'Active'}</Tag>
+      }
     },
     {
       title: 'Actions',
@@ -516,19 +528,27 @@ const Units: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
+      {/* Enhanced header with selection feedback */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           marginBottom: 24,
           flexWrap: 'wrap',
           gap: '16px'
         }}
       >
-        <Title level={2} style={{ margin: 0 }}>
-          Units
-        </Title>
+        <div>
+          <Title level={2} style={{ margin: 0, display: 'inline', marginRight: 12 }}>
+            Units
+          </Title>
+          {selectedRowKeys.length > 0 && (
+            <Text type="secondary" style={{ fontSize: '14px' }}>
+              ({selectedRowKeys.length} selected)
+            </Text>
+          )}
+        </div>
         <Space wrap>
           {selectedRowKeys.length > 0 && (
             <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
@@ -593,22 +613,98 @@ const Units: React.FC = () => {
               <Option value="Plot">Plot</Option>
               <Option value="Bungalow">Bungalow</Option>
             </Select>
-            <Space>
+            
+            {/* Area range with validation */}
+            <Input.Group compact>
               <InputNumber
                 placeholder="Min Area"
                 style={{ width: 100 }}
                 value={areaRange[0]}
-                onChange={(val) => setAreaRange([val, areaRange[1]])}
+                onChange={(min) => {
+                  if (areaRange[1] && min && min > areaRange[1]) {
+                    message.warning('Minimum area cannot be greater than maximum');
+                    return;
+                  }
+                  setAreaRange([min, areaRange[1]]);
+                }}
               />
-              <span>-</span>
+              <span style={{ padding: '0 8px', lineHeight: '32px' }}>to</span>
               <InputNumber
                 placeholder="Max Area"
                 style={{ width: 100 }}
                 value={areaRange[1]}
-                onChange={(val) => setAreaRange([areaRange[0], val])}
+                onChange={(max) => {
+                  if (areaRange[0] && max && max < areaRange[0]) {
+                    message.warning('Maximum area cannot be less than minimum');
+                    return;
+                  }
+                  setAreaRange([areaRange[0], max]);
+                }}
               />
-            </Space>
+            </Input.Group>
           </Space>
+          
+          {/* Filter summary chips */}
+          {hasActiveFilters && (
+            <div style={{ marginTop: 16 }}>
+              <Space wrap>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Active filters:</Text>
+                {searchText && (
+                  <Tag 
+                    closable 
+                    onClose={() => setSearchText('')}
+                    style={{ fontSize: '12px' }}
+                  >
+                    Search: "{searchText}"
+                  </Tag>
+                )}
+                {selectedProject && (
+                  <Tag 
+                    closable 
+                    onClose={() => setSelectedProject(null)}
+                    style={{ fontSize: '12px' }}
+                  >
+                    Project: {getProjectNameById(selectedProject)}
+                  </Tag>
+                )}
+                {selectedUnitType && (
+                  <Tag 
+                    closable 
+                    onClose={() => setSelectedUnitType(null)}
+                    style={{ fontSize: '12px' }}
+                  >
+                    Type: {selectedUnitType}
+                  </Tag>
+                )}
+                {statusFilter && (
+                  <Tag 
+                    closable 
+                    onClose={() => setStatusFilter(null)}
+                    style={{ fontSize: '12px' }}
+                  >
+                    Status: {statusFilter}
+                  </Tag>
+                )}
+                {(areaRange[0] !== null || areaRange[1] !== null) && (
+                  <Tag 
+                    closable 
+                    onClose={() => setAreaRange([null, null])}
+                    style={{ fontSize: '12px' }}
+                  >
+                    Area: {areaRange[0] !== null ? `${areaRange[0]}` : 'Any'} to {areaRange[1] !== null ? `${areaRange[1]}` : 'Any'}
+                  </Tag>
+                )}
+                <Button 
+                  type="link" 
+                  size="small" 
+                  onClick={clearAllFilters}
+                  style={{ fontSize: '12px', padding: 0, height: 'auto' }}
+                >
+                  Clear all
+                </Button>
+              </Space>
+            </div>
+          )}
         </div>
 
         <Table
@@ -625,6 +721,7 @@ const Units: React.FC = () => {
         />
       </Card>
 
+      {/* Responsive Import Modal */}
       <Modal
         title="Import Units from Excel"
         open={isImportModalOpen}
@@ -636,6 +733,28 @@ const Units: React.FC = () => {
         }}
         width={800}
         confirmLoading={loading}
+        style={{ maxWidth: '90vw' }}
+        bodyStyle={{ maxHeight: '70vh', overflow: 'auto' }}
+        footer={[
+          <Button 
+            key="cancel" 
+            onClick={() => {
+              setIsImportModalOpen(false)
+              setImportData([])
+              setMappedPreview([])
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button 
+            key="submit" 
+            type="primary" 
+            loading={loading}
+            onClick={handleImportOk}
+          >
+            Import Units
+          </Button>
+        ]}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           <Alert
@@ -654,17 +773,26 @@ const Units: React.FC = () => {
             />
           )}
 
+          {/* Responsive form controls */}
           <div style={{ marginBottom: 16 }}>
-            <Space size="large" align="end" wrap>
+            <div 
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '16px',
+                alignItems: 'end'
+              }}
+            >
               <div>
-                <Typography.Text strong>Step 1: Import to Project</Typography.Text>
+                <Text strong>Step 1: Import to Project</Text>
                 <Select
                   placeholder="Select Project"
-                  style={{ width: 250, display: 'block', marginTop: 8 }}
+                  style={{ width: '100%', marginTop: 8 }}
                   status={!importProjectId ? 'error' : undefined}
                   value={importProjectId}
                   onChange={setImportProjectId}
                   allowClear
+                  dropdownMatchSelectWidth={false}
                 >
                   {projects.map((p) => (
                     <Option key={p.id} value={p.id}>
@@ -674,173 +802,218 @@ const Units: React.FC = () => {
                 </Select>
               </div>
               <div>
-                <Typography.Text strong>Empty Units</Typography.Text>
+                <Text strong>Empty Units</Text>
                 <Select
                   value={ignoreEmptyUnits ? 'ignore' : 'keep'}
                   onChange={(val) => setIgnoreEmptyUnits(val === 'ignore')}
-                  style={{ width: 150, display: 'block', marginTop: 8 }}
+                  style={{ width: '100%', marginTop: 8 }}
+                  dropdownMatchSelectWidth={false}
                 >
                   <Option value="ignore">Ignore Empty</Option>
                   <Option value="keep">Keep Empty</Option>
                 </Select>
               </div>
               <div>
-                <Typography.Text strong>Default Area</Typography.Text>
+                <Text strong>Default Area</Text>
                 <InputNumber
                   placeholder="Default Area"
                   value={defaultArea}
                   onChange={(val) => setDefaultArea(val || 0)}
-                  style={{ width: 120, display: 'block', marginTop: 8 }}
+                  style={{ width: '100%', marginTop: 8 }}
                 />
               </div>
-            </Space>
+            </div>
           </div>
 
           {mappedPreview.length > 0 && (
             <div>
-              <Typography.Text strong>Step 2: Preview & Edit Data</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
+              <Text strong>Step 2: Preview & Edit Data</Text>
+              <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                 Double-click on any cell to edit. Red borders indicate missing required fields.
-              </Typography.Paragraph>
-              <Table
-                size="small"
-                pagination={{ pageSize: 5 }}
-                dataSource={mappedPreview}
-                rowKey="previewId"
-                columns={[
-                  {
-                    title: 'Project',
-                    key: 'project',
-                    width: 150,
-                    render: () => {
-                      const project = projects.find((p) => p.id === Number(importProjectId))
-                      return project ? (
-                        project.name
-                      ) : (
-                        <Typography.Text type="danger">Not Selected</Typography.Text>
+              </Paragraph>
+              
+              {/* Responsive table container */}
+              <div style={{ 
+                width: '100%', 
+                overflow: 'auto',
+                border: '1px solid #f0f0f0',
+                borderRadius: '4px',
+                marginTop: 8
+              }}>
+                <Table
+                  size="small"
+                  pagination={{ 
+                    pageSize: 5,
+                    responsive: true,
+                    showSizeChanger: false,
+                    simple: true
+                  }}
+                  dataSource={mappedPreview}
+                  rowKey="previewId"
+                  columns={[
+                    {
+                      title: 'Project',
+                      key: 'project',
+                      width: 120,
+                      render: () => {
+                        const project = projects.find((p) => p.id === Number(importProjectId))
+                        return project ? (
+                          <Text ellipsis style={{ maxWidth: '100px' }}>
+                            {project.name}
+                          </Text>
+                        ) : (
+                          <Text type="danger" ellipsis style={{ maxWidth: '100px' }}>
+                            Not Selected
+                          </Text>
+                        )
+                      },
+                      responsive: ['md']
+                    },
+                    {
+                      title: 'Unit No',
+                      dataIndex: 'unit_number',
+                      key: 'unit_number',
+                      width: 120,
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Input
+                          size="small"
+                          status={!text ? 'error' : undefined}
+                          value={text}
+                          onChange={(e) =>
+                            handlePreviewCellChange(record.previewId, 'unit_number', e.target.value)
+                          }
+                          placeholder="Required"
+                          style={{ width: '100%', minWidth: '80px' }}
+                        />
+                      ),
+                      responsive: ['xs']
+                    },
+                    {
+                      title: 'Owner',
+                      dataIndex: 'owner_name',
+                      key: 'owner_name',
+                      width: 150,
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Input
+                          size="small"
+                          status={!text ? 'error' : undefined}
+                          value={text}
+                          onChange={(e) =>
+                            handlePreviewCellChange(record.previewId, 'owner_name', e.target.value)
+                          }
+                          placeholder="Required"
+                          style={{ width: '100%', minWidth: '100px' }}
+                        />
+                      ),
+                      responsive: ['xs']
+                    },
+                    {
+                      title: 'Type',
+                      dataIndex: 'unit_type',
+                      key: 'unit_type',
+                      width: 100,
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Select
+                          size="small"
+                          value={text}
+                          onChange={(val) =>
+                            handlePreviewCellChange(record.previewId, 'unit_type', val)
+                          }
+                          style={{ width: '100%', minWidth: '80px' }}
+                          dropdownMatchSelectWidth={false}
+                        >
+                          <Option value="Plot">Plot</Option>
+                          <Option value="Bungalow">Bungalow</Option>
+                        </Select>
+                      ),
+                      responsive: ['sm']
+                    },
+                    {
+                      title: 'Area',
+                      dataIndex: 'area_sqft',
+                      key: 'area_sqft',
+                      width: 90,
+                      render: (text: number, record: ImportUnitPreview) => (
+                        <InputNumber
+                          size="small"
+                          value={text}
+                          onChange={(val) =>
+                            handlePreviewCellChange(record.previewId, 'area_sqft', val)
+                          }
+                          style={{ width: '100%', minWidth: '70px' }}
+                        />
+                      ),
+                      responsive: ['sm']
+                    },
+                    {
+                      title: 'Status',
+                      dataIndex: 'status',
+                      key: 'status',
+                      width: 100,
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Select
+                          size="small"
+                          value={text}
+                          onChange={(val) => handlePreviewCellChange(record.previewId, 'status', val)}
+                          style={{ width: '100%', minWidth: '80px' }}
+                          dropdownMatchSelectWidth={false}
+                        >
+                          <Option value="Active">Active</Option>
+                          <Option value="Inactive">Inactive</Option>
+                        </Select>
+                      ),
+                      responsive: ['sm']
+                    },
+                    {
+                      title: 'Contact',
+                      dataIndex: 'contact_number',
+                      key: 'contact_number',
+                      width: 120,
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Input
+                          size="small"
+                          value={text}
+                          onChange={(e) =>
+                            handlePreviewCellChange(
+                              record.previewId,
+                              'contact_number',
+                              e.target.value
+                            )
+                          }
+                          style={{ width: '100%', minWidth: '100px' }}
+                        />
+                      ),
+                      responsive: ['md']
+                    },
+                    {
+                      title: 'Penalty',
+                      dataIndex: 'penalty',
+                      key: 'penalty',
+                      width: 100,
+                      render: (text: number, record: ImportUnitPreview) => (
+                        <InputNumber
+                          size="small"
+                          value={text}
+                          onChange={(val) =>
+                            handlePreviewCellChange(record.previewId, 'penalty', val)
+                          }
+                          style={{ width: '100%', minWidth: '70px' }}
+                        />
+                      ),
+                      responsive: ['md']
+                    }
+                  ]}
+                  scroll={{ x: 'max-content' }}
+                  style={{ minWidth: '600px' }}
+                  components={{
+                    header: {
+                      cell: (props: any) => (
+                        <th {...props} style={{ ...props.style, whiteSpace: 'nowrap' }} />
                       )
                     }
-                  },
-                  {
-                    title: 'Unit No',
-                    dataIndex: 'unit_number',
-                    key: 'unit_number',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Input
-                        size="small"
-                        status={!text ? 'error' : undefined}
-                        value={text}
-                        onChange={(e) =>
-                          handlePreviewCellChange(record.previewId, 'unit_number', e.target.value)
-                        }
-                        placeholder="Required"
-                      />
-                    )
-                  },
-                  {
-                    title: 'Owner Name',
-                    dataIndex: 'owner_name',
-                    key: 'owner_name',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Input
-                        size="small"
-                        status={!text ? 'error' : undefined}
-                        value={text}
-                        onChange={(e) =>
-                          handlePreviewCellChange(record.previewId, 'owner_name', e.target.value)
-                        }
-                        placeholder="Required"
-                      />
-                    )
-                  },
-                  {
-                    title: 'Type',
-                    dataIndex: 'unit_type',
-                    key: 'unit_type',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Select
-                        size="small"
-                        value={text}
-                        onChange={(val) =>
-                          handlePreviewCellChange(record.previewId, 'unit_type', val)
-                        }
-                        style={{ width: '100%' }}
-                      >
-                        <Option value="Plot">Plot</Option>
-                        <Option value="Bungalow">Bungalow</Option>
-                      </Select>
-                    )
-                  },
-                  {
-                    title: 'Area',
-                    dataIndex: 'area_sqft',
-                    key: 'area_sqft',
-                    width: 100,
-                    render: (text: number, record: ImportUnitPreview) => (
-                      <InputNumber
-                        size="small"
-                        value={text}
-                        onChange={(val) =>
-                          handlePreviewCellChange(record.previewId, 'area_sqft', val)
-                        }
-                        style={{ width: '100%' }}
-                      />
-                    )
-                  },
-                  {
-                    title: 'Status',
-                    dataIndex: 'status',
-                    key: 'status',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Select
-                        size="small"
-                        value={text}
-                        onChange={(val) => handlePreviewCellChange(record.previewId, 'status', val)}
-                        style={{ width: '100%' }}
-                      >
-                        <Option value="Active">Active</Option>
-                        <Option value="Inactive">Inactive</Option>
-                      </Select>
-                    )
-                  },
-                  {
-                    title: 'Contact',
-                    dataIndex: 'contact_number',
-                    key: 'contact_number',
-                    render: (text: string, record: ImportUnitPreview) => (
-                      <Input
-                        size="small"
-                        value={text}
-                        onChange={(e) =>
-                          handlePreviewCellChange(
-                            record.previewId,
-                            'contact_number',
-                            e.target.value
-                          )
-                        }
-                      />
-                    )
-                  },
-                  {
-                    title: 'Penalty',
-                    dataIndex: 'penalty',
-                    key: 'penalty',
-                    width: 100,
-                    render: (text: number, record: ImportUnitPreview) => (
-                      <InputNumber
-                        size="small"
-                        value={text}
-                        onChange={(val) =>
-                          handlePreviewCellChange(record.previewId, 'penalty', val)
-                        }
-                        style={{ width: '100%' }}
-                      />
-                    )
-                  }
-                ]}
-                scroll={{ x: true }}
-                style={{ marginTop: 8 }}
-              />
+                  }}
+                />
+              </div>
             </div>
           )}
 
@@ -861,6 +1034,7 @@ const Units: React.FC = () => {
         onOk={handleModalOk}
         onCancel={() => setIsModalOpen(false)}
         width={600}
+        style={{ maxWidth: '90vw' }}
       >
         <Form
           form={form}

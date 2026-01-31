@@ -414,15 +414,15 @@ const Billing: React.FC = () => {
               <Option value="Paid">Paid</Option>
             </Select>
             <Select
-            placeholder="Unit Type"
-            style={{ width: 140 }}
-            allowClear
-            onChange={setSelectedUnitType}
-            value={selectedUnitType}
-          >
-            <Option value="Plot">Plot</Option>
-            <Option value="Bungalow">Bungalow</Option>
-          </Select>
+              placeholder="Unit Type"
+              style={{ width: 140 }}
+              allowClear
+              onChange={setSelectedUnitType}
+              value={selectedUnitType}
+            >
+              <Option value="Plot">Plot</Option>
+              <Option value="Bungalow">Bungalow</Option>
+            </Select>
           </Space>
 
           <Space wrap size="middle">
