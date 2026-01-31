@@ -7,9 +7,12 @@ export interface Project {
   pincode?: string
   status?: string
   letterhead_path?: string
+  account_name?: string
   bank_name?: string
   account_no?: string
   ifsc_code?: string
+  branch?: string
+  branch_address?: string
   qr_code_path?: string
   unit_count?: number
   created_at?: string

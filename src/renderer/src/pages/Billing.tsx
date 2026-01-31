@@ -78,7 +78,7 @@ const Billing: React.FC = () => {
   const [form] = Form.useForm()
   const location = useLocation()
   const [passedUnitIds, setPassedUnitIds] = useState<number[]>([])
-  
+
   // PDF generation state
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [pdfProgress, setPdfProgress] = useState<PdfProgress | null>(null)
@@ -154,27 +154,38 @@ const Billing: React.FC = () => {
 
   // Calculate filter statistics
   const filterStats = useMemo(() => {
-    const pending = letters.filter(l => l.status === 'Pending').length
-    const paid = letters.filter(l => l.status === 'Paid').length
-    const overdue = letters.filter(l => 
-      l.status === 'Pending' && l.due_date && dayjs(l.due_date).isBefore(dayjs())
+    const pending = letters.filter((l) => l.status === 'Pending').length
+    const paid = letters.filter((l) => l.status === 'Paid').length
+    const overdue = letters.filter(
+      (l) => l.status === 'Pending' && l.due_date && dayjs(l.due_date).isBefore(dayjs())
     ).length
-    
+
     return { pending, paid, overdue }
   }, [letters])
 
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
-    return searchText || 
-           selectedProject !== null || 
-           selectedYear !== defaultFY || 
-           selectedStatus !== null || 
-           selectedUnitType !== null || 
-           amountRange[0] !== null || 
-           amountRange[1] !== null || 
-           dueDateRange[0] !== null || 
-           dueDateRange[1] !== null
-  }, [searchText, selectedProject, selectedYear, selectedStatus, selectedUnitType, amountRange, dueDateRange, defaultFY])
+    return (
+      searchText ||
+      selectedProject !== null ||
+      selectedYear !== defaultFY ||
+      selectedStatus !== null ||
+      selectedUnitType !== null ||
+      amountRange[0] !== null ||
+      amountRange[1] !== null ||
+      dueDateRange[0] !== null ||
+      dueDateRange[1] !== null
+    )
+  }, [
+    searchText,
+    selectedProject,
+    selectedYear,
+    selectedStatus,
+    selectedUnitType,
+    amountRange,
+    dueDateRange,
+    defaultFY
+  ])
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
@@ -301,31 +312,39 @@ const Billing: React.FC = () => {
     })
 
     const letterIds = selectedRowKeys as number[]
-    
+
     for (let i = 0; i < letterIds.length; i++) {
       try {
         const path = await window.api.letters.generatePdf(letterIds[i])
-        setPdfProgress(prev => prev ? {
-          ...prev,
-          current: i + 1,
-          completed: [...prev.completed, { id: letterIds[i], path, success: true }]
-        } : null)
+        setPdfProgress((prev) =>
+          prev
+            ? {
+                ...prev,
+                current: i + 1,
+                completed: [...prev.completed, { id: letterIds[i], path, success: true }]
+              }
+            : null
+        )
       } catch {
-        setPdfProgress(prev => prev ? {
-          ...prev,
-          current: i + 1,
-          completed: [...prev.completed, { id: letterIds[i], path: '', success: false }]
-        } : null)
+        setPdfProgress((prev) =>
+          prev
+            ? {
+                ...prev,
+                current: i + 1,
+                completed: [...prev.completed, { id: letterIds[i], path: '', success: false }]
+              }
+            : null
+        )
       }
     }
 
     setGeneratingPdf(false)
-    
+
     // Show summary notification
     if (pdfProgress) {
-      const successCount = pdfProgress.completed.filter(c => c.success).length
-      const failCount = pdfProgress.completed.filter(c => !c.success).length
-      
+      const successCount = pdfProgress.completed.filter((c) => c.success).length
+      const failCount = pdfProgress.completed.filter((c) => !c.success).length
+
       notification.info({
         message: 'Batch PDF Generation Complete',
         description: (
@@ -387,8 +406,9 @@ const Billing: React.FC = () => {
 
     // Status Logic: Pending (is_paid=0), Paid (is_paid=1), Overdue (pending + past due)
     const letterDueDate = letter.due_date ? dayjs(letter.due_date) : null
-    const isOverdue = letter.status === 'Pending' && letterDueDate && letterDueDate.isBefore(dayjs())
-    
+    const isOverdue =
+      letter.status === 'Pending' && letterDueDate && letterDueDate.isBefore(dayjs())
+
     const matchStatus =
       !selectedStatus ||
       (selectedStatus === 'Paid' && letter.status === 'Paid') ||
@@ -440,7 +460,7 @@ const Billing: React.FC = () => {
   // Get selected project name
   const selectedProjectName = useMemo(() => {
     if (!selectedProject) return ''
-    const project = projects.find(p => p.id === selectedProject)
+    const project = projects.find((p) => p.id === selectedProject)
     return project?.name || ''
   }, [selectedProject, projects])
 
@@ -513,7 +533,11 @@ const Billing: React.FC = () => {
         return (
           <div>
             {date || '-'}
-            {isOverdue && <Tag color="red" style={{ marginLeft: 4 }}>Overdue</Tag>}
+            {isOverdue && (
+              <Tag color="red" style={{ marginLeft: 4 }}>
+                Overdue
+              </Tag>
+            )}
           </div>
         )
       }
@@ -523,7 +547,8 @@ const Billing: React.FC = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status: string, record: MaintenanceLetter) => {
-        const isOverdue = status === 'Pending' && record.due_date && dayjs(record.due_date).isBefore(dayjs())
+        const isOverdue =
+          status === 'Pending' && record.due_date && dayjs(record.due_date).isBefore(dayjs())
         const tagColor = isOverdue ? 'red' : status === 'Paid' ? 'green' : 'orange'
         const tagText = isOverdue ? 'Overdue' : status
         return <Tag color={tagColor}>{tagText}</Tag>
@@ -578,9 +603,9 @@ const Billing: React.FC = () => {
           <Space>
             {selectedRowKeys.length > 0 && (
               <>
-                <Button 
-                  type="primary" 
-                  icon={<FilePdfOutlined />} 
+                <Button
+                  type="primary"
+                  icon={<FilePdfOutlined />}
                   onClick={handleBatchPdf}
                   loading={generatingPdf}
                 >
@@ -643,25 +668,19 @@ const Billing: React.FC = () => {
               <Option value="Pending">
                 <Space>
                   <span>Pending</span>
-                  <Tag color="orange">
-                    {filterStats.pending}
-                  </Tag>
+                  <Tag color="orange">{filterStats.pending}</Tag>
                 </Space>
               </Option>
               <Option value="Paid">
                 <Space>
                   <span>Paid</span>
-                  <Tag color="green">
-                    {filterStats.paid}
-                  </Tag>
+                  <Tag color="green">{filterStats.paid}</Tag>
                 </Space>
               </Option>
               <Option value="Overdue">
                 <Space>
                   <span>Overdue</span>
-                  <Tag color="red">
-                    {filterStats.overdue}
-                  </Tag>
+                  <Tag color="red">{filterStats.overdue}</Tag>
                 </Space>
               </Option>
             </Select>
@@ -721,63 +740,58 @@ const Billing: React.FC = () => {
 
           {/* Filter Summary Chips */}
           {hasActiveFilters && (
-            <div style={{ marginTop: 16, padding: '12px 16px', background: '#fafafa', borderRadius: 6 }}>
+            <div
+              style={{
+                marginTop: 16,
+                padding: '12px 16px',
+                background: '#fafafa',
+                borderRadius: 6
+              }}
+            >
               <Space wrap align="center">
                 <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500 }}>
                   Active filters:
                 </Text>
                 {searchText && (
-                  <Tag
-                  closable
-                  onClose={() => setSearchText('')}>
-                  Search: &quot;{searchText}&quot;
-                </Tag>
+                  <Tag closable onClose={() => setSearchText('')}>
+                    Search: &quot;{searchText}&quot;
+                  </Tag>
                 )}
                 {selectedProject !== null && (
-                  <Tag 
-                  closable 
-                  onClose={() => setSelectedProject(null)} >
-                  Project: {selectedProjectName}
-                </Tag>
+                  <Tag closable onClose={() => setSelectedProject(null)}>
+                    Project: {selectedProjectName}
+                  </Tag>
                 )}
                 {selectedYear !== null && selectedYear !== defaultFY && (
-                  <Tag 
-                  closable 
-                  onClose={() => setSelectedYear(defaultFY)} >
-                  FY: {selectedYear}
-                </Tag>
+                  <Tag closable onClose={() => setSelectedYear(defaultFY)}>
+                    FY: {selectedYear}
+                  </Tag>
                 )}
                 {selectedStatus && (
-                  <Tag 
-                  closable 
-                  onClose={() => setSelectedStatus(null)} >
-                  Status: {selectedStatus}
-                </Tag>
+                  <Tag closable onClose={() => setSelectedStatus(null)}>
+                    Status: {selectedStatus}
+                  </Tag>
                 )}
                 {selectedUnitType && (
-                  <Tag 
-                  closable 
-                  onClose={() => setSelectedUnitType(null)} >
-                  Type: {selectedUnitType}
-                </Tag>
+                  <Tag closable onClose={() => setSelectedUnitType(null)}>
+                    Type: {selectedUnitType}
+                  </Tag>
                 )}
                 {(amountRange[0] !== null || amountRange[1] !== null) && (
-                  <Tag 
-                  closable 
-                  onClose={() => setAmountRange([null, null])}>
-                  Amount: {amountRange[0] !== null ? `₹${amountRange[0]}` : 'Any'} - {amountRange[1] !== null ? `₹${amountRange[1]}` : 'Any'}
-                </Tag>
+                  <Tag closable onClose={() => setAmountRange([null, null])}>
+                    Amount: {amountRange[0] !== null ? `₹${amountRange[0]}` : 'Any'} -{' '}
+                    {amountRange[1] !== null ? `₹${amountRange[1]}` : 'Any'}
+                  </Tag>
                 )}
                 {(dueDateRange[0] || dueDateRange[1]) && (
-                  <Tag 
-                  closable 
-                  onClose={() => setDueDateRange([null, null])}>
-                  Due: {dueDateRange[0]?.format('DD/MM/YY') || 'Any'} to {dueDateRange[1]?.format('DD/MM/YY') || 'Any'}
-                </Tag>
+                  <Tag closable onClose={() => setDueDateRange([null, null])}>
+                    Due: {dueDateRange[0]?.format('DD/MM/YY') || 'Any'} to{' '}
+                    {dueDateRange[1]?.format('DD/MM/YY') || 'Any'}
+                  </Tag>
                 )}
-                <Button 
-                  type="link" 
-                  size="small" 
+                <Button
+                  type="link"
+                  size="small"
                   onClick={clearAllFilters}
                   style={{ fontSize: '12px', padding: 0, height: 'auto' }}
                 >
@@ -795,8 +809,8 @@ const Billing: React.FC = () => {
         open={generatingPdf}
         onCancel={() => setGeneratingPdf(false)}
         footer={[
-          <Button 
-            key="cancel" 
+          <Button
+            key="cancel"
             onClick={() => setGeneratingPdf(false)}
             disabled={pdfProgress?.current === pdfProgress?.total}
           >
@@ -816,7 +830,7 @@ const Billing: React.FC = () => {
             <Text>
               Generating {pdfProgress.current} of {pdfProgress.total} PDFs
             </Text>
-            
+
             {pdfProgress.completed.length > 0 && (
               <div style={{ marginTop: 16, maxHeight: 200, overflow: 'auto' }}>
                 <List
@@ -855,9 +869,10 @@ const Billing: React.FC = () => {
         loading={loading}
         pagination={{ pageSize: 10 }}
         rowClassName={(record) => {
-          const isOverdue = record.status === 'Pending' && 
-                           record.due_date && 
-                           dayjs(record.due_date).isBefore(dayjs())
+          const isOverdue =
+            record.status === 'Pending' &&
+            record.due_date &&
+            dayjs(record.due_date).isBefore(dayjs())
           return isOverdue ? 'overdue-row' : !record.is_paid ? 'pending-row' : ''
         }}
         onRow={(record) => ({
@@ -889,9 +904,9 @@ const Billing: React.FC = () => {
             onClose={() => setPassedUnitIds([])}
           />
         )}
-        
-        <Tabs 
-          activeKey={batchModalStep} 
+
+        <Tabs
+          activeKey={batchModalStep}
           onChange={(key) => setBatchModalStep(key as 'config' | 'units')}
           style={{ marginBottom: 16 }}
         >
@@ -956,7 +971,9 @@ const Billing: React.FC = () => {
                   <DatePicker style={{ width: '100%' }} />
                 </Form.Item>
 
-                <Divider style={{ gridColumn: 'span 2', margin: '8px 0' }}>Add-ons (Optional)</Divider>
+                <Divider style={{ gridColumn: 'span 2', margin: '8px 0' }}>
+                  Add-ons (Optional)
+                </Divider>
 
                 <Form.List name="add_ons">
                   {(fields, { add, remove }) => (
@@ -965,7 +982,12 @@ const Billing: React.FC = () => {
                         <Space
                           key={key}
                           wrap
-                          style={{ display: 'flex', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}
+                          style={{
+                            display: 'flex',
+                            width: '100%',
+                            marginBottom: 8,
+                            flexWrap: 'wrap'
+                          }}
                           align="baseline"
                         >
                           <Form.Item
@@ -974,7 +996,10 @@ const Billing: React.FC = () => {
                             rules={[{ required: true, message: 'Name required' }]}
                             style={{ flex: '1 1 220px', marginBottom: 0 }}
                           >
-                            <Input placeholder="Addon Name (e.g. Penalty)" style={{ width: '100%' }} />
+                            <Input
+                              placeholder="Addon Name (e.g. Penalty)"
+                              style={{ width: '100%' }}
+                            />
                           </Form.Item>
                           <Form.Item
                             {...restField}
@@ -982,7 +1007,11 @@ const Billing: React.FC = () => {
                             rules={[{ required: true, message: 'Amount required' }]}
                             style={{ width: 140, marginBottom: 0 }}
                           >
-                            <InputNumber placeholder="Amount" style={{ width: '100%' }} prefix="₹" />
+                            <InputNumber
+                              placeholder="Amount"
+                              style={{ width: '100%' }}
+                              prefix="₹"
+                            />
                           </Form.Item>
                           <Form.Item
                             {...restField}
@@ -1010,7 +1039,7 @@ const Billing: React.FC = () => {
               </div>
             </Form>
           </TabPane>
-          
+
           <TabPane tab="2. Select Units (Optional)" key="units" disabled={!batchProjectId}>
             <Alert
               message="Select specific units to generate letters for, or leave empty to generate for all units in the project"
@@ -1032,7 +1061,10 @@ const Billing: React.FC = () => {
               >
                 Select all
               </Button>
-              <Button onClick={() => setSelectedUnitIds([])} disabled={selectedUnitIds.length === 0}>
+              <Button
+                onClick={() => setSelectedUnitIds([])}
+                disabled={selectedUnitIds.length === 0}
+              >
                 Clear
               </Button>
               <Text type="secondary">

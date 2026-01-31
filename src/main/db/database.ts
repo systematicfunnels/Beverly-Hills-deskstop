@@ -244,6 +244,12 @@ class DatabaseService {
           this.db.exec('ALTER TABLE projects ADD COLUMN pincode TEXT')
         if (!columns.some((c) => c.name === 'status'))
           this.db.exec("ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'Active'")
+        if (!columns.some((c) => c.name === 'account_name'))
+          this.db.exec('ALTER TABLE projects ADD COLUMN account_name TEXT')
+        if (!columns.some((c) => c.name === 'branch'))
+          this.db.exec('ALTER TABLE projects ADD COLUMN branch TEXT')
+        if (!columns.some((c) => c.name === 'branch_address'))
+          this.db.exec('ALTER TABLE projects ADD COLUMN branch_address TEXT')
       }
 
       // 2.1 Ensure maintenance_rates table has new columns

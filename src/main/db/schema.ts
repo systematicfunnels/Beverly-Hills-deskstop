@@ -10,9 +10,12 @@ CREATE TABLE IF NOT EXISTS projects (
   pincode TEXT,
   status TEXT DEFAULT 'Active', -- Active, Inactive
   letterhead_path TEXT,
+  account_name TEXT,
   bank_name TEXT,
   account_no TEXT,
   ifsc_code TEXT,
+  branch TEXT,
+  branch_address TEXT,
   qr_code_path TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

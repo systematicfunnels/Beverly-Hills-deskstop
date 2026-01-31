@@ -9,9 +9,12 @@ export interface Project {
   pincode?: string
   status?: string
   letterhead_path?: string
+  account_name?: string
   bank_name?: string
   account_no?: string
   ifsc_code?: string
+  branch?: string
+  branch_address?: string
   qr_code_path?: string
   created_at?: string
   unit_count?: number
@@ -33,8 +36,8 @@ class ProjectService {
   public create(project: Project): number {
     const result = dbService.run(
       `INSERT INTO projects (
-        name, address, city, state, pincode, status, letterhead_path, bank_name, account_no, ifsc_code, qr_code_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        name, address, city, state, pincode, status, letterhead_path, account_name, bank_name, account_no, ifsc_code, branch, branch_address, qr_code_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         project.name,
         project.address,
@@ -43,9 +46,12 @@ class ProjectService {
         project.pincode,
         project.status || 'Active',
         project.letterhead_path,
+        project.account_name,
         project.bank_name,
         project.account_no,
         project.ifsc_code,
+        project.branch,
+        project.branch_address,
         project.qr_code_path
       ]
     )
@@ -61,9 +67,12 @@ class ProjectService {
       'pincode',
       'status',
       'letterhead_path',
+      'account_name',
       'bank_name',
       'account_no',
       'ifsc_code',
+      'branch',
+      'branch_address',
       'qr_code_path'
     ]
     const keys = Object.keys(project).filter(

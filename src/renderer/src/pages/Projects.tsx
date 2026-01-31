@@ -607,15 +607,31 @@ const Projects: React.FC = () => {
                   marginTop: 16
                 }}
               >
+                <Form.Item name="account_name" label="Name" style={{ gridColumn: 'span 2' }}>
+                  <Input />
+                </Form.Item>
+
                 <Form.Item name="bank_name" label="Bank Name">
                   <Input />
                 </Form.Item>
 
-                <Form.Item name="account_no" label="Account Number">
+                <Form.Item name="account_no" label="Account No.">
                   <Input />
                 </Form.Item>
 
                 <Form.Item name="ifsc_code" label="IFSC Code">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item name="branch" label="Branch">
+                  <Input />
+                </Form.Item>
+
+                <Form.Item
+                  name="branch_address"
+                  label="Branch Address"
+                  style={{ gridColumn: 'span 2' }}
+                >
                   <Input />
                 </Form.Item>
               </div>
