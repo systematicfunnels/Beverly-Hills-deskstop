@@ -467,11 +467,12 @@ const Projects: React.FC = () => {
               </Button>
             )}
             <Upload
+              disabled
               beforeUpload={handleImport}
               showUploadList={false}
               accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
             >
-              <Button icon={<UploadOutlined />}>Import Excel</Button>
+              <Button icon={<UploadOutlined />} disabled>Import Excel</Button>
             </Upload>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
               Add Project
