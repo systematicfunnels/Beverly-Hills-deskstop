@@ -48,6 +48,10 @@ interface SlabFormValues {
   discount_percentage: number
 }
 
+type FormValidationError = {
+  errorFields?: unknown[]
+}
+
 const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
   projectId,
   projectName,
@@ -67,6 +71,25 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
 
   const [rateForm] = Form.useForm<RateFormValues>()
   const [slabForm] = Form.useForm<SlabFormValues>()
+
+  const todayDateInput = useMemo(() => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [])
+
+  const isFormValidationError = (error: unknown): error is FormValidationError => {
+    return !!error && typeof error === 'object' && 'errorFields' in error
+  }
+
+  const getErrorMessage = useCallback((error: unknown, fallback: string): string => {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message
+    }
+    return fallback
+  }, [])
 
   const fetchRates = useCallback(async (): Promise<void> => {
     if (!projectId) return
@@ -104,6 +127,18 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
     return years.sort().reverse()
   }, [rates])
 
+  const formFinancialYearOptions = useMemo(() => {
+    const today = new Date()
+    const currentFyStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
+    const rollingYears = Array.from({ length: 10 }, (_, idx) => {
+      const startYear = currentFyStartYear - 2 + idx
+      const endYear = String(startYear + 1).slice(-2)
+      return `${startYear}-${endYear}`
+    })
+    const existingYears = rates.map((r) => r.financial_year).filter(Boolean) as string[]
+    return Array.from(new Set([...rollingYears, ...existingYears])).sort().reverse()
+  }, [rates])
+
   const filteredRates = useMemo(() => {
     return rates.filter((r) => {
       const fyOk = !filterFY || r.financial_year === filterFY
@@ -118,7 +153,7 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       return rates.some(
         (rate) =>
           rate.financial_year === financial_year &&
-          rate.unit_type === unit_type &&
+          (rate.unit_type || 'Bungalow') === (unit_type || 'Bungalow') &&
           rate.id !== excludeId
       )
     },
@@ -164,8 +199,9 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       rateForm.resetFields()
       fetchRates()
     } catch (error) {
-      console.error('Failed to save rate:', error)
-      // Form validation error or API error
+      if (!isFormValidationError(error)) {
+        message.error(getErrorMessage(error, 'Failed to save rate'))
+      }
     } finally {
       setLoading(false)
     }
@@ -226,7 +262,8 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       const values = await slabForm.validateFields()
 
       // Validate due date is not in the past
-      const dueDate = new Date(values.due_date)
+      const [year, month, day] = values.due_date.split('-').map(Number)
+      const dueDate = new Date(year, month - 1, day)
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
@@ -247,8 +284,9 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       slabForm.resetFields()
       handleViewSlabs(selectedRate)
     } catch (error) {
-      console.error('Failed to add slab:', error)
-      // Form validation error or API error
+      if (!isFormValidationError(error)) {
+        message.error(getErrorMessage(error, 'Failed to add slab'))
+      }
     } finally {
       setLoadingSlabs(false)
     }
@@ -303,7 +341,7 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
       title: 'Rate per Sqft',
       dataIndex: 'rate_per_sqft',
       key: 'rate_per_sqft',
-      render: (val: number): string => `₹${val?.toFixed(2) || '0.00'}`
+      render: (val: number): string => `Rs. ${val?.toFixed(2) || '0.00'}`
     },
     {
       title: 'Billing Frequency',
@@ -531,18 +569,16 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
               <Form.Item<RateFormValues>
                 name="financial_year"
                 label="Financial Year"
-                rules={[
-                  { required: true, message: 'Financial Year is required' },
-                  { pattern: /^\d{4}-\d{2}$/, message: 'Format: YYYY-YY (e.g., 2024-25)' }
-                ]}
+                rules={[{ required: true, message: 'Financial Year is required' }]}
                 style={{ marginBottom: 8 }}
               >
-                <Input
-                  placeholder="e.g., 2024-25"
-                  style={{ width: 120 }}
-                  aria-label="Financial year"
-                  maxLength={7}
-                />
+                <Select style={{ width: 120 }} aria-label="Financial year">
+                  {formFinancialYearOptions.map((fy) => (
+                    <Option key={fy} value={fy}>
+                      {fy}
+                    </Option>
+                  ))}
+                </Select>
               </Form.Item>
               <Form.Item<RateFormValues>
                 name="unit_type"
@@ -662,7 +698,7 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
                     <Input
                       type="date"
                       aria-label="Slab due date"
-                      min={new Date().toISOString().split('T')[0]}
+                      min={todayDateInput}
                     />
                   </Form.Item>
                   <Form.Item<SlabFormValues>

@@ -301,7 +301,7 @@ class PaymentService {
 
       // Automatically generate a receipt number if not provided
       if (payment.payment_status !== 'Pending') {
-        const receiptNumber = payment.receipt_number || `REC-${Date.now()}`
+        const receiptNumber = payment.receipt_number || `REC-${paymentId}`
         dbService.run(
           `INSERT INTO receipts (payment_id, receipt_number, receipt_date)
            VALUES (?, ?, ?)`,

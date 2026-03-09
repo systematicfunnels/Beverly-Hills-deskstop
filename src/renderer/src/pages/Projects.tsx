@@ -25,7 +25,6 @@ import {
   SearchOutlined,
   BankOutlined
 } from '@ant-design/icons'
-import { IndianRupee } from 'lucide-react'
 import { Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
@@ -424,11 +423,9 @@ const Projects: React.FC = () => {
       render: (_: unknown, record: Project) => (
         <Space size="middle">
           <Tooltip title="Manage Rates">
-            <Button
-              icon={<IndianRupee size={14} />}
-              onClick={() => handleRates(record)}
-              size="small"
-            />
+            <Button onClick={() => handleRates(record)} size="small">
+              Rates
+            </Button>
           </Tooltip>
           <Tooltip title="Edit Project">
             <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />

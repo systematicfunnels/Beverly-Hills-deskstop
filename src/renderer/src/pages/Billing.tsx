@@ -571,9 +571,11 @@ const Billing: React.FC = () => {
     },
     {
       title: 'Letter Date',
-      dataIndex: 'letter_date',
-      key: 'letter_date',
-      render: (date: string) => date || '-'
+      dataIndex: 'generated_date',
+      key: 'generated_date',
+      render: (date: string) => (date ? dayjs(date).format('DD MMM YYYY') : '-'),
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) =>
+        dayjs(a.generated_date || '').valueOf() - dayjs(b.generated_date || '').valueOf()
     },
     {
       title: 'Due Date',

@@ -236,6 +236,16 @@ const Payments: React.FC = () => {
     message.success('Cleared all amounts')
   }, [])
 
+  const handleSetAllToCheque = useCallback(() => {
+    setBulkPayments((prev) => prev.map((p) => ({ ...p, payment_mode: 'Cheque' })))
+    message.success('Set all payments to Cheque mode')
+  }, [])
+
+  const handleSetAllToCash = useCallback(() => {
+    setBulkPayments((prev) => prev.map((p) => ({ ...p, payment_mode: 'Cash' })))
+    message.success('Set all payments to Cash mode')
+  }, [])
+
   const calculateAmountsFromLetters = useCallback(() => {
     if (!bulkProject) return
 
@@ -281,15 +291,28 @@ const Payments: React.FC = () => {
       }
 
       setLoading(true)
+      const paymentIds: number[] = []
       for (const payment of validPayments) {
-        await window.api.payments.create(payment as Payment)
+        const paymentId = await window.api.payments.create(payment as Payment)
+        paymentIds.push(paymentId)
       }
-      message.success(`Successfully recorded ${validPayments.length} payments`)
+      message.success(`Successfully recorded ${validPayments.length} payments. Generating receipts...`)
+      setGeneratingReceipts(true)
+      try {
+        await Promise.all(paymentIds.map(id => window.api.payments.generateReceiptPdf(id)))
+        message.success('Receipts generated successfully')
+      } catch (error) {
+        console.error('Failed to generate receipts:', error)
+        message.error('Payments recorded but failed to generate some receipts')
+      } finally {
+        setGeneratingReceipts(false)
+      }
       setIsBulkModalOpen(false)
       fetchData()
     } catch (error) {
       console.error('Failed to record bulk payments:', error)
-      message.error('Failed to record bulk payments')
+      const messageText = error instanceof Error ? error.message : String(error)
+      message.error(`Failed to record bulk payments: ${messageText}`)
     } finally {
       setLoading(false)
     }
@@ -1161,6 +1184,20 @@ const Payments: React.FC = () => {
                   aria-label="Clear all amounts"
                 >
                   Clear All Amounts
+                </Button>
+                <Button
+                  size="small"
+                  onClick={handleSetAllToCheque}
+                  aria-label="Set all payments to Cheque mode"
+                >
+                  Set All to Cheque
+                </Button>
+                <Button
+                  size="small"
+                  onClick={handleSetAllToCash}
+                  aria-label="Set all payments to Cash mode"
+                >
+                  Set All to Cash
                 </Button>
               </div>
 

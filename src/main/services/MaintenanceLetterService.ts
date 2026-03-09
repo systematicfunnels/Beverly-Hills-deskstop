@@ -25,6 +25,7 @@ export interface MaintenanceLetter {
   bank_name?: string
   account_no?: string
   ifsc_code?: string
+  qr_code_path?: string
   add_ons_total?: number
   unit_type?: string
 }
@@ -38,10 +39,56 @@ export interface AddOn {
 }
 
 class MaintenanceLetterService {
+  private sanitizeFileNamePart(value: string): string {
+    const sanitized = value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().replace(/\s+/g, '_')
+    return sanitized || 'UNKNOWN'
+  }
+
+  private ensureColumnExists(
+    tableName: string,
+    columnName: string,
+    alterSql: string
+  ): boolean {
+    const getHasColumn = (): boolean => {
+      const columns = dbService.query<{ name: string }>(`PRAGMA table_info(${tableName})`)
+      return columns.some((column) => column.name === columnName)
+    }
+
+    if (getHasColumn()) return true
+
+    try {
+      dbService.run(alterSql)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      const lower = message.toLowerCase()
+      if (!lower.includes('duplicate column name')) {
+        console.error(`Failed to add ${tableName}.${columnName} column: ${message}`)
+      }
+    }
+
+    return getHasColumn()
+  }
+
+  private ensureUnitsUnitTypeColumn(): boolean {
+    return this.ensureColumnExists(
+      'units',
+      'unit_type',
+      "ALTER TABLE units ADD COLUMN unit_type TEXT DEFAULT 'Bungalow'"
+    )
+  }
+
+  private ensureMaintenanceRatesUnitTypeColumn(): boolean {
+    return this.ensureColumnExists(
+      'maintenance_rates',
+      'unit_type',
+      "ALTER TABLE maintenance_rates ADD COLUMN unit_type TEXT DEFAULT 'Bungalow'"
+    )
+  }
+
   public async generatePdf(letterId: number): Promise<string> {
     const letter = dbService.get<MaintenanceLetter>(
       `
-      SELECT l.*, u.unit_number, u.owner_name, p.name as project_name, p.bank_name, p.account_no, p.ifsc_code
+      SELECT l.*, u.unit_number, u.owner_name, p.name as project_name, p.bank_name, p.account_no, p.ifsc_code, p.qr_code_path
       FROM maintenance_letters l
       JOIN units u ON l.unit_id = u.id
       JOIN projects p ON l.project_id = p.id
@@ -185,15 +232,17 @@ class MaintenanceLetterService {
     })
     page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 45, size: 10, font })
 
-    // Add UPI Scanner
-    const upiPath =
-      'c:\\Users\\heman_naocpgi\\Documents\\Beverly-Hills-deskstop\\resources\\UPI.jpeg'
-    if (fs.existsSync(upiPath)) {
+    // Add project-configured QR image if available
+    const qrPath = letter.qr_code_path ? path.resolve(letter.qr_code_path) : ''
+    const qrExt = path.extname(qrPath).toLowerCase()
+    const isSupportedQrImage = qrExt === '.png' || qrExt === '.jpg' || qrExt === '.jpeg'
+    if (qrPath && isSupportedQrImage && fs.existsSync(qrPath)) {
       try {
-        const upiImageBytes = fs.readFileSync(upiPath)
-        const upiImage = await pdfDoc.embedJpg(upiImageBytes)
+        const qrImageBytes = fs.readFileSync(qrPath)
+        const qrImage =
+          qrExt === '.png' ? await pdfDoc.embedPng(qrImageBytes) : await pdfDoc.embedJpg(qrImageBytes)
         // Draw image (100x100) to the right of bank details
-        page.drawImage(upiImage, {
+        page.drawImage(qrImage, {
           x: 400,
           y: currentY - 80,
           width: 100,
@@ -206,15 +255,16 @@ class MaintenanceLetterService {
           font: boldFont
         })
       } catch (error) {
-        console.error('Error embedding UPI image:', error)
+        console.error('Error embedding QR image:', error)
       }
     }
 
     const pdfBytes = await pdfDoc.save()
     const pdfDir = path.join(app.getPath('userData'), 'maintenance_letters')
-    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir)
+    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true })
 
-    const fileName = `ML_${letter.id}_${letter.unit_number}.pdf`
+    const safeUnitNumber = this.sanitizeFileNamePart(letter.unit_number || 'UNKNOWN')
+    const fileName = `ML_${letter.id}_${safeUnitNumber}.pdf`
     const filePath = path.join(pdfDir, fileName)
     fs.writeFileSync(filePath, pdfBytes)
 
@@ -230,6 +280,37 @@ class MaintenanceLetterService {
     unitIds: number[] = [],
     addOns: { addon_name: string; addon_amount: number }[] = []
   ): boolean {
+    const hasUnitsUnitType = this.ensureUnitsUnitTypeColumn()
+    const hasRatesUnitType = this.ensureMaintenanceRatesUnitTypeColumn()
+    const unitTypeExpr = hasUnitsUnitType
+      ? "COALESCE(NULLIF(TRIM(u.unit_type), ''), 'Bungalow')"
+      : "'Bungalow'"
+    const rateJoinClause = hasRatesUnitType
+      ? `
+      JOIN maintenance_rates r ON r.id = COALESCE(
+        (
+          SELECT MAX(r2.id)
+          FROM maintenance_rates r2
+          WHERE r2.project_id = u.project_id
+            AND r2.financial_year = ?
+            AND r2.unit_type = ${unitTypeExpr}
+        ),
+        (
+          SELECT MAX(r3.id)
+          FROM maintenance_rates r3
+          WHERE r3.project_id = u.project_id
+            AND r3.financial_year = ?
+            AND r3.unit_type = 'All'
+        )
+      )`
+      : `
+      JOIN maintenance_rates r ON r.id = (
+        SELECT MAX(r2.id)
+        FROM maintenance_rates r2
+        WHERE r2.project_id = u.project_id
+          AND r2.financial_year = ?
+      )`
+
     // 1. Check if the project has units
     let unitFilter = 'WHERE project_id = ?'
     const unitParams: (string | number | undefined | null)[] = [projectId]
@@ -256,8 +337,10 @@ class MaintenanceLetterService {
       )
     }
 
-    let queryFilter = 'WHERE u.project_id = ? AND r.financial_year = ?'
-    const queryParams: (string | number | undefined | null)[] = [projectId, financialYear]
+    let queryFilter = 'WHERE u.project_id = ?'
+    const queryParams: (string | number | undefined | null)[] = hasRatesUnitType
+      ? [financialYear, financialYear, projectId]
+      : [financialYear, projectId]
     if (unitIds && unitIds.length > 0) {
       queryFilter += ` AND u.id IN (${unitIds.map(() => '?').join(',')})`
       queryParams.push(...unitIds)
@@ -270,22 +353,41 @@ class MaintenanceLetterService {
       discount_percentage?: number
     }>(
       `
-      SELECT u.*, r.rate_per_sqft, s.discount_percentage, s.due_date as discount_due_date
+      SELECT
+        u.id,
+        u.area_sqft,
+        r.rate_per_sqft,
+        COALESCE(
+          (
+            SELECT MAX(s.discount_percentage)
+            FROM maintenance_slabs s
+            WHERE s.rate_id = r.id AND s.is_early_payment = 1
+          ),
+          0
+        ) as discount_percentage
       FROM units u
-      JOIN maintenance_rates r ON u.project_id = r.project_id AND u.unit_type = r.unit_type
-      LEFT JOIN maintenance_slabs s ON r.id = s.rate_id AND s.is_early_payment = 1
+      ${rateJoinClause}
       ${queryFilter}
     `,
       queryParams
     )
 
     if (units.length === 0) {
-      // Diagnostic check: do rates exist for these unit types?
-      const existingRates = dbService.query<{ unit_type: string }>(
-        'SELECT unit_type FROM maintenance_rates WHERE project_id = ? AND financial_year = ?',
-        [projectId, financialYear]
-      )
-      const rateTypes = existingRates.map((r) => r.unit_type).join(', ')
+      let rateTypes = 'None'
+      if (hasRatesUnitType) {
+        const existingRates = dbService.query<{ unit_type: string | null }>(
+          'SELECT unit_type FROM maintenance_rates WHERE project_id = ? AND financial_year = ?',
+          [projectId, financialYear]
+        )
+        rateTypes = existingRates.map((r) => r.unit_type || '(blank)').join(', ') || 'None'
+      } else {
+        const rateCount =
+          dbService.get<{ count: number }>(
+            'SELECT COUNT(*) as count FROM maintenance_rates WHERE project_id = ? AND financial_year = ?',
+            [projectId, financialYear]
+          )?.count || 0
+        rateTypes = rateCount > 0 ? 'Legacy rates (unit type unavailable)' : 'None'
+      }
 
       throw new Error(
         `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types (Plot, Bungalow).`
@@ -293,6 +395,7 @@ class MaintenanceLetterService {
     }
 
     return dbService.transaction(() => {
+      const totalAddOns = addOns.reduce((sum, addon) => sum + addon.addon_amount, 0)
       for (const unit of units) {
         // Calculate Arrears from previous letters
         const previousOutstanding =
@@ -307,14 +410,11 @@ class MaintenanceLetterService {
 
         const baseAmount = unit.area_sqft * unit.rate_per_sqft
         const discountAmount = (baseAmount * (unit.discount_percentage || 0)) / 100
-        let totalAddOns = 0
-        addOns.forEach((a) => (totalAddOns += a.addon_amount))
 
         const arrears = previousOutstanding // Keep negative values to allow advance payments to reduce final amount
         const finalAmount = Math.max(0, baseAmount + arrears + totalAddOns - discountAmount)
 
-        // Use INSERT INTO ... ON CONFLICT to preserve ID if possible
-        const result = dbService.run(
+        dbService.run(
           `
           INSERT INTO maintenance_letters (
             project_id, unit_id, financial_year, base_amount, arrears, discount_amount, 
@@ -342,16 +442,14 @@ class MaintenanceLetterService {
           ]
         )
 
-        let letterId = result.lastInsertRowid as number
-
-        // If it was an update, lastInsertRowid might not be the existing ID
-        if (result.changes === 1 && result.lastInsertRowid === 0) {
-          const existing = dbService.get<{ id: number }>(
-            'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
-            [unit.id, financialYear]
-          )
-          letterId = existing!.id
+        const existing = dbService.get<{ id: number }>(
+          'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+          [unit.id, financialYear]
+        )
+        if (!existing) {
+          throw new Error(`Failed to persist maintenance letter for unit ${unit.id}`)
         }
+        const letterId = existing.id
 
         // Clear old add-ons if it was an update
         dbService.run('DELETE FROM add_ons WHERE letter_id = ?', [letterId])
