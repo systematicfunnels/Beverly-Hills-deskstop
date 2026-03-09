@@ -280,7 +280,8 @@ const Units: React.FC = () => {
     const filtered = units.filter((unit) => {
       const matchSearch =
         unit.unit_number.toLowerCase().includes(searchText.toLowerCase()) ||
-        unit.owner_name.toLowerCase().includes(searchText.toLowerCase())
+        unit.owner_name.toLowerCase().includes(searchText.toLowerCase()) ||
+        (unit.email || '').toLowerCase().includes(searchText.toLowerCase())
       const matchProject = !selectedProject || unit.project_id === selectedProject
       const matchType = !selectedUnitType || unit.unit_type === selectedUnitType
       const matchStatus = !statusFilter || unit.status === statusFilter
@@ -504,6 +505,12 @@ const Units: React.FC = () => {
       title: 'Contact',
       dataIndex: 'contact_number',
       key: 'contact_number',
+      render: (text: string) => text || '-'
+    },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
       render: (text: string) => text || '-'
     },
     {
