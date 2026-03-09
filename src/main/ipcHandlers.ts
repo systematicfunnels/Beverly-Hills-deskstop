@@ -10,6 +10,23 @@ import {
   MaintenanceSlab
 } from './services/MaintenanceRateService'
 
+const isPositiveInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0
+
+const isNonNegativeNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+
+const isPositiveNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+
+const isIsoDate = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+
+const isFinancialYear = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}$/.test(value)
+
+const sanitizeText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
 export function registerIpcHandlers(): void {
   // Projects
   ipcMain.handle('get-projects', (): Project[] => {
@@ -21,6 +38,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('create-project', (_, project: Project): number => {
+    if (!sanitizeText(project?.name)) {
+      throw new Error('Project name is required')
+    }
     return projectService.create(project)
   })
 
@@ -53,6 +73,18 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('create-unit', (_, unit: Unit): number => {
+    if (!isPositiveInteger(unit?.project_id)) {
+      throw new Error('Invalid project selected for unit')
+    }
+    if (!sanitizeText(unit?.unit_number)) {
+      throw new Error('Unit number is required')
+    }
+    if (!sanitizeText(unit?.owner_name)) {
+      throw new Error('Owner name is required')
+    }
+    if (!isPositiveNumber(unit?.area_sqft)) {
+      throw new Error('Area must be greater than 0')
+    }
     return unitService.create(unit)
   })
 
@@ -88,6 +120,33 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'create-batch-letters',
     (_, { projectId, unitIds, financialYear, letterDate, dueDate, addOns }): boolean => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      if (!isFinancialYear(financialYear)) {
+        throw new Error('Invalid financial year format (expected YYYY-YY)')
+      }
+      if (!isIsoDate(letterDate) || !isIsoDate(dueDate)) {
+        throw new Error('Invalid letter/due date format (expected YYYY-MM-DD)')
+      }
+      if (unitIds !== undefined && !Array.isArray(unitIds)) {
+        throw new Error('Invalid units selection')
+      }
+      if (Array.isArray(unitIds) && unitIds.some((id) => !isPositiveInteger(id))) {
+        throw new Error('Invalid unit id in selection')
+      }
+      if (addOns !== undefined && !Array.isArray(addOns)) {
+        throw new Error('Invalid add-ons payload')
+      }
+      if (
+        Array.isArray(addOns) &&
+        addOns.some(
+          (addon) => !sanitizeText(addon?.addon_name) || !isNonNegativeNumber(addon?.addon_amount)
+        )
+      ) {
+        throw new Error('Each add-on requires a valid name and non-negative amount')
+      }
+
       return maintenanceLetterService.createBatch(
         projectId,
         financialYear,
@@ -149,6 +208,29 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('create-payment', (_, payment: Payment): number => {
+    if (!isPositiveInteger(payment?.project_id) || !isPositiveInteger(payment?.unit_id)) {
+      throw new Error('Invalid project or unit selected')
+    }
+    if (payment?.letter_id !== undefined && payment.letter_id !== null && !isPositiveInteger(payment.letter_id)) {
+      throw new Error('Invalid maintenance letter selected')
+    }
+    if (!isIsoDate(payment?.payment_date)) {
+      throw new Error('Invalid payment date format (expected YYYY-MM-DD)')
+    }
+    if (!isPositiveNumber(payment?.payment_amount)) {
+      throw new Error('Payment amount must be greater than 0')
+    }
+    const mode = sanitizeText(payment?.payment_mode)
+    if (!['Transfer', 'Cheque', 'Cash', 'UPI'].includes(mode)) {
+      throw new Error('Invalid payment mode')
+    }
+    if (
+      payment?.financial_year !== undefined &&
+      payment.financial_year !== null &&
+      !isFinancialYear(payment.financial_year)
+    ) {
+      throw new Error('Invalid financial year format (expected YYYY-YY)')
+    }
     return paymentService.create(payment)
   })
 

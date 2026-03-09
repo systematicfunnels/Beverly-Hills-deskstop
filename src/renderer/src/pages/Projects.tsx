@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -53,6 +53,7 @@ const Projects: React.FC = () => {
 
   const [form] = Form.useForm()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const fetchProjects = async (): Promise<void> => {
     setLoading(true)
@@ -364,10 +365,8 @@ const Projects: React.FC = () => {
   }
 
   const handleViewUnits = useCallback((projectId: number, projectName: string) => {
-    // Navigate to units page with project filter
-    // This assumes you have routing set up
-    window.location.href = `/units?projectId=${projectId}&projectName=${encodeURIComponent(projectName)}`
-  }, [])
+    navigate('/units', { state: { projectId, projectName } })
+  }, [navigate])
 
   const columns = [
     {

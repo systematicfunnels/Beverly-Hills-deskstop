@@ -262,7 +262,20 @@ class DatabaseService {
           name: string
         }[]
         if (!columns.some((c) => c.name === 'unit_type'))
-          this.db.exec("ALTER TABLE maintenance_rates ADD COLUMN unit_type TEXT DEFAULT 'Flat'")
+          this.db.exec("ALTER TABLE maintenance_rates ADD COLUMN unit_type TEXT DEFAULT 'Bungalow'")
+
+        // Normalize legacy values to supported unit types.
+        this.db.exec(`
+          UPDATE maintenance_rates
+          SET unit_type = CASE
+            WHEN unit_type IS NULL OR TRIM(unit_type) = '' THEN 'Bungalow'
+            WHEN LOWER(TRIM(unit_type)) = 'flat' THEN 'Bungalow'
+            WHEN LOWER(TRIM(unit_type)) = 'plot' THEN 'Plot'
+            WHEN LOWER(TRIM(unit_type)) IN ('all', 'all units') THEN 'All'
+            WHEN LOWER(TRIM(unit_type)) = 'bungalow' THEN 'Bungalow'
+            ELSE unit_type
+          END
+        `)
       }
 
       // 2.2 Ensure maintenance_letters table has new columns
@@ -369,7 +382,7 @@ class DatabaseService {
           this.db.exec(`
             INSERT OR IGNORE INTO maintenance_letters (id, project_id, unit_id, financial_year, base_amount, discount_amount, final_amount, due_date, status, pdf_path, generated_date)
             SELECT i.id, u.project_id, i.unit_id, (i.billing_year || '-' || SUBSTR((i.billing_year + 1), 3, 2)), i.amount_due, i.discount_amount, i.total_amount, i.due_date, 
-                   CASE WHEN i.status = 'Paid' THEN 'Generated' ELSE 'Generated' END, i.pdf_path, i.created_at
+                   CASE WHEN i.status = 'Paid' THEN 'Paid' ELSE 'Pending' END, i.pdf_path, i.created_at
             FROM invoices i
             JOIN units u ON i.unit_id = u.id
           `)

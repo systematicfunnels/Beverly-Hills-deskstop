@@ -154,16 +154,27 @@ const Billing: React.FC = () => {
     setSelectedUnitIds(passedUnitIds)
   }, [isModalOpen, passedUnitIds, selectedUnitIds])
 
+  const getDisplayStatus = useCallback((letter: MaintenanceLetter): 'Paid' | 'Pending' | 'Overdue' => {
+    const rawStatus = (letter.status || '').trim().toLowerCase()
+    if (rawStatus === 'paid' || !!letter.is_paid) return 'Paid'
+
+    const isPendingLike =
+      rawStatus === '' || rawStatus === 'pending' || rawStatus === 'generated' || rawStatus === 'modified'
+    if (isPendingLike && letter.due_date && dayjs(letter.due_date).isBefore(dayjs(), 'day')) {
+      return 'Overdue'
+    }
+
+    return 'Pending'
+  }, [])
+
   // Calculate filter statistics
   const filterStats = useMemo(() => {
-    const pending = letters.filter((l) => l.status === 'Pending').length
-    const paid = letters.filter((l) => l.status === 'Paid').length
-    const overdue = letters.filter(
-      (l) => l.status === 'Pending' && l.due_date && dayjs(l.due_date).isBefore(dayjs())
-    ).length
+    const pending = letters.filter((l) => getDisplayStatus(l) === 'Pending').length
+    const paid = letters.filter((l) => getDisplayStatus(l) === 'Paid').length
+    const overdue = letters.filter((l) => getDisplayStatus(l) === 'Overdue').length
 
     return { pending, paid, overdue }
-  }, [letters])
+  }, [letters, getDisplayStatus])
 
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
@@ -455,16 +466,14 @@ const Billing: React.FC = () => {
       letter.unit_number?.toLowerCase().includes(searchText.toLowerCase()) ||
       letter.owner_name?.toLowerCase().includes(searchText.toLowerCase())
 
-    // Status Logic: Pending (is_paid=0), Paid (is_paid=1), Overdue (pending + past due)
     const letterDueDate = letter.due_date ? dayjs(letter.due_date) : null
-    const isOverdue =
-      letter.status === 'Pending' && letterDueDate && letterDueDate.isBefore(dayjs())
+    const displayStatus = getDisplayStatus(letter)
 
     const matchStatus =
       !selectedStatus ||
-      (selectedStatus === 'Paid' && letter.status === 'Paid') ||
-      (selectedStatus === 'Pending' && letter.status === 'Pending' && !isOverdue) ||
-      (selectedStatus === 'Overdue' && isOverdue)
+      (selectedStatus === 'Paid' && displayStatus === 'Paid') ||
+      (selectedStatus === 'Pending' && displayStatus === 'Pending') ||
+      (selectedStatus === 'Overdue' && displayStatus === 'Overdue')
 
     const matchUnitType =
       !selectedUnitType || selectedUnitType === 'All' || letter.unit_type === selectedUnitType
@@ -581,9 +590,8 @@ const Billing: React.FC = () => {
       title: 'Due Date',
       dataIndex: 'due_date',
       key: 'due_date',
-      render: (date: string) => {
-        const dueDate = date ? dayjs(date) : null
-        const isOverdue = dueDate && dueDate.isBefore(dayjs())
+      render: (date: string, record: MaintenanceLetter) => {
+        const isOverdue = getDisplayStatus(record) === 'Overdue'
         return (
           <div>
             {date || '-'}
@@ -600,12 +608,10 @@ const Billing: React.FC = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string, record: MaintenanceLetter) => {
-        const isOverdue =
-          status === 'Pending' && record.due_date && dayjs(record.due_date).isBefore(dayjs())
-        const tagColor = isOverdue ? 'red' : status === 'Paid' ? 'green' : 'orange'
-        const tagText = isOverdue ? 'Overdue' : status
-        return <Tag color={tagColor}>{tagText}</Tag>
+      render: (_status: string, record: MaintenanceLetter) => {
+        const status = getDisplayStatus(record)
+        const tagColor = status === 'Overdue' ? 'red' : status === 'Paid' ? 'green' : 'orange'
+        return <Tag color={tagColor}>{status}</Tag>
       }
     },
     {
@@ -933,11 +939,8 @@ const Billing: React.FC = () => {
         loading={loading}
         pagination={{ pageSize: 10 }}
         rowClassName={(record) => {
-          const isOverdue =
-            record.status === 'Pending' &&
-            record.due_date &&
-            dayjs(record.due_date).isBefore(dayjs())
-          return isOverdue ? 'overdue-row' : !record.is_paid ? 'pending-row' : ''
+          const status = getDisplayStatus(record)
+          return status === 'Overdue' ? 'overdue-row' : status === 'Pending' ? 'pending-row' : ''
         }}
         onRow={(record) => ({
           onClick: () => handleShowAddOns(record),

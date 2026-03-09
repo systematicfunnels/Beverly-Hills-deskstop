@@ -31,6 +31,36 @@ export interface Receipt {
 }
 
 class PaymentService {
+  private updateLetterStatus(letterId: number): void {
+    const letter = dbService.get<{ id: number; final_amount: number }>(
+      'SELECT id, final_amount FROM maintenance_letters WHERE id = ?',
+      [letterId]
+    )
+    if (!letter) return
+
+    const paidAmount =
+      dbService.get<{ total: number }>('SELECT SUM(payment_amount) as total FROM payments WHERE letter_id = ?', [
+        letterId
+      ])?.total || 0
+
+    const isPaid = paidAmount + 0.01 >= letter.final_amount
+    dbService.run('UPDATE maintenance_letters SET status = ?, is_paid = ? WHERE id = ?', [
+      isPaid ? 'Paid' : 'Pending',
+      isPaid ? 1 : 0,
+      letterId
+    ])
+  }
+
+  private updateLetterStatusByUnitYear(unitId: number, financialYear?: string): void {
+    if (!financialYear) return
+    const letter = dbService.get<{ id: number }>(
+      'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+      [unitId, financialYear]
+    )
+    if (!letter) return
+    this.updateLetterStatus(letter.id)
+  }
+
   public async generateReceiptPdf(paymentId: number): Promise<string> {
     const payment = dbService.get<Payment>(
       `
@@ -278,6 +308,23 @@ class PaymentService {
 
   public create(payment: Payment): number {
     return dbService.transaction(() => {
+      let resolvedLetterId = payment.letter_id
+      let resolvedFinancialYear = payment.financial_year
+
+      if (!resolvedLetterId && resolvedFinancialYear) {
+        resolvedLetterId = dbService.get<{ id: number }>(
+          'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+          [payment.unit_id, resolvedFinancialYear]
+        )?.id
+      }
+
+      if (!resolvedFinancialYear && resolvedLetterId) {
+        resolvedFinancialYear = dbService.get<{ financial_year: string }>(
+          'SELECT financial_year FROM maintenance_letters WHERE id = ?',
+          [resolvedLetterId]
+        )?.financial_year
+      }
+
       const result = dbService.run(
         `INSERT INTO payments (
           project_id, unit_id, letter_id, financial_year, payment_date, payment_amount, 
@@ -286,8 +333,8 @@ class PaymentService {
         [
           payment.project_id,
           payment.unit_id,
-          payment.letter_id,
-          payment.financial_year,
+          resolvedLetterId,
+          resolvedFinancialYear,
           payment.payment_date,
           payment.payment_amount,
           payment.payment_mode,
@@ -309,6 +356,12 @@ class PaymentService {
         )
       }
 
+      if (resolvedLetterId) {
+        this.updateLetterStatus(resolvedLetterId)
+      } else {
+        this.updateLetterStatusByUnitYear(payment.unit_id, resolvedFinancialYear)
+      }
+
       return paymentId
     })
   }
@@ -317,12 +370,16 @@ class PaymentService {
     return dbService.transaction(() => {
       try {
         const payment = dbService.get<Payment>('SELECT * FROM payments WHERE id = ?', [id])
-        if (payment && payment.letter_id) {
-          dbService.run("UPDATE maintenance_letters SET status = 'Generated' WHERE id = ?", [
-            payment.letter_id
-          ])
-        }
         const result = dbService.run('DELETE FROM payments WHERE id = ?', [id])
+
+        if (result.changes > 0 && payment) {
+          if (payment.letter_id) {
+            this.updateLetterStatus(payment.letter_id)
+          } else {
+            this.updateLetterStatusByUnitYear(payment.unit_id, payment.financial_year)
+          }
+        }
+
         return result.changes > 0
       } catch (error) {
         console.error(`Error deleting payment ${id}:`, error)

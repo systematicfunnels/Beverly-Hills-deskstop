@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -64,6 +64,7 @@ const Units: React.FC = () => {
 
   const [form] = Form.useForm()
   const navigate = useNavigate()
+  const location = useLocation()
 
   // Memoized filter status for performance
   const hasActiveFilters = useMemo(() => {
@@ -275,6 +276,20 @@ const Units: React.FC = () => {
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    const state = location.state as { projectId?: number } | null
+    const queryProjectId = Number(new URLSearchParams(location.search).get('projectId'))
+    const projectIdFromRoute =
+      state?.projectId ??
+      (Number.isFinite(queryProjectId) && queryProjectId > 0 ? queryProjectId : undefined)
+
+    if (projectIdFromRoute) {
+      setSelectedProject(projectIdFromRoute)
+      // Clear route state so refresh does not re-trigger banner messages in future extensions.
+      window.history.replaceState({}, document.title)
+    }
+  }, [location])
 
   useEffect(() => {
     const filtered = units.filter((unit) => {

@@ -464,20 +464,21 @@ const Payments: React.FC = () => {
     setGeneratingReceipts(false)
     setReceiptProgress(null)
 
-    if (failCount === 0) {
-      const receiptFolder = firstReceiptPath.substring(0, firstReceiptPath.lastIndexOf('/'))
+    if (failCount === 0 && firstReceiptPath) {
       message.success(
         <span>
-          Successfully generated {successCount} receipts in{' '}
+          Successfully generated {successCount} receipts.{' '}
           <a
-            onClick={() => window.api.shell.showItemInFolder(receiptFolder)}
+            onClick={() => window.api.shell.showItemInFolder(firstReceiptPath)}
             style={{ color: '#1890ff', cursor: 'pointer' }}
           >
-            {receiptFolder}
+            Open folder
           </a>
         </span>,
         10 // Show for 10 seconds
       )
+    } else if (failCount === 0) {
+      message.success(`Successfully generated ${successCount} receipts`)
     } else {
       message.warning(`Generated ${successCount} receipts, failed to generate ${failCount}`)
     }
@@ -988,9 +989,6 @@ const Payments: React.FC = () => {
                                 {fy}
                               </Option>
                             ))}
-                          <Option value="2024-25">2024-25</Option>
-                          <Option value="2025-26">2025-26</Option>
-                          <Option value="2026-27">2026-27</Option>
                         </Select>
                       </Form.Item>
                     </div>
@@ -1125,8 +1123,6 @@ const Payments: React.FC = () => {
                       {fy}
                     </Option>
                   ))}
-                <Option value="2024-25">2024-25</Option>
-                <Option value="2025-26">2025-26</Option>
               </Select>
             </Form.Item>
             <Form.Item

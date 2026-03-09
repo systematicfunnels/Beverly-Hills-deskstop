@@ -16,7 +16,7 @@ export interface MaintenanceLetter {
   is_paid?: boolean // Aligned with ER
   is_sent?: boolean // Aligned with ER
   due_date?: string
-  status: string // Generated, Modified
+  status: string // Pending, Paid, Overdue, Generated (legacy)
   pdf_path?: string
   generated_date?: string
   unit_number?: string
@@ -283,7 +283,15 @@ class MaintenanceLetterService {
     const hasUnitsUnitType = this.ensureUnitsUnitTypeColumn()
     const hasRatesUnitType = this.ensureMaintenanceRatesUnitTypeColumn()
     const unitTypeExpr = hasUnitsUnitType
-      ? "COALESCE(NULLIF(TRIM(u.unit_type), ''), 'Bungalow')"
+      ? `
+      CASE
+        WHEN u.unit_type IS NULL OR TRIM(u.unit_type) = '' THEN 'Bungalow'
+        WHEN LOWER(TRIM(u.unit_type)) = 'flat' THEN 'Bungalow'
+        WHEN LOWER(TRIM(u.unit_type)) = 'plot' THEN 'Plot'
+        WHEN LOWER(TRIM(u.unit_type)) = 'bungalow' THEN 'Bungalow'
+        ELSE TRIM(u.unit_type)
+      END
+    `
       : "'Bungalow'"
     const rateJoinClause = hasRatesUnitType
       ? `
@@ -401,11 +409,24 @@ class MaintenanceLetterService {
         const previousOutstanding =
           dbService.get<{ total: number }>(
             `
-          SELECT SUM(final_amount) - COALESCE((SELECT SUM(payment_amount) FROM payments WHERE unit_id = ?), 0) as total
-          FROM maintenance_letters 
-          WHERE unit_id = ? AND financial_year < ?
+          SELECT
+            COALESCE(SUM(l.final_amount), 0) - COALESCE(
+              (
+                SELECT SUM(p.payment_amount)
+                FROM payments p
+                LEFT JOIN maintenance_letters ml ON ml.id = p.letter_id
+                WHERE p.unit_id = ?
+                  AND (
+                    (p.financial_year IS NOT NULL AND p.financial_year < ?)
+                    OR (p.financial_year IS NULL AND ml.financial_year < ?)
+                  )
+              ),
+              0
+            ) as total
+          FROM maintenance_letters l
+          WHERE l.unit_id = ? AND l.financial_year < ?
         `,
-            [unit.id, unit.id, financialYear]
+            [unit.id, financialYear, financialYear, unit.id, financialYear]
           )?.total || 0
 
         const baseAmount = unit.area_sqft * unit.rate_per_sqft
@@ -419,7 +440,7 @@ class MaintenanceLetterService {
           INSERT INTO maintenance_letters (
             project_id, unit_id, financial_year, base_amount, arrears, discount_amount, 
             final_amount, due_date, status, is_paid, is_sent, generated_date
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Generated', 0, 0, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 0, 0, ?)
           ON CONFLICT(unit_id, financial_year) DO UPDATE SET
             base_amount = excluded.base_amount,
             arrears = excluded.arrears,
@@ -427,7 +448,28 @@ class MaintenanceLetterService {
             final_amount = excluded.final_amount,
             due_date = excluded.due_date,
             generated_date = excluded.generated_date,
-            status = 'Generated'
+            status = CASE
+              WHEN COALESCE(
+                (
+                  SELECT SUM(payment_amount)
+                  FROM payments
+                  WHERE letter_id = maintenance_letters.id
+                ),
+                0
+              ) + 0.01 >= excluded.final_amount THEN 'Paid'
+              ELSE 'Pending'
+            END,
+            is_paid = CASE
+              WHEN COALESCE(
+                (
+                  SELECT SUM(payment_amount)
+                  FROM payments
+                  WHERE letter_id = maintenance_letters.id
+                ),
+                0
+              ) + 0.01 >= excluded.final_amount THEN 1
+              ELSE 0
+            END
         `,
           [
             projectId,

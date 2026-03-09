@@ -21,6 +21,12 @@ export interface Project {
 }
 
 class ProjectService {
+  private logDebug(message: string, ...args: unknown[]): void {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(message, ...args)
+    }
+  }
+
   public getAll(): Project[] {
     return dbService.query<Project>(`
       SELECT p.*, (SELECT COUNT(*) FROM units u WHERE u.project_id = p.id) as unit_count
@@ -91,7 +97,7 @@ class ProjectService {
   public delete(id: number): boolean {
     return dbService.transaction(() => {
       try {
-        console.log(`[PROJECT_SERVICE] Starting deletion for project ID: ${id}`)
+        this.logDebug(`[PROJECT_SERVICE] Starting deletion for project ID: ${id}`)
 
         // 1. Delete the project - let ON DELETE CASCADE handle the rest
         // Tables handled by CASCADE in schema.ts:
@@ -106,7 +112,7 @@ class ProjectService {
         const result = dbService.run('DELETE FROM projects WHERE id = ?', [id])
 
         if (result.changes > 0) {
-          console.log(
+          this.logDebug(
             `[PROJECT_SERVICE] Successfully deleted project ${id} and all related data via cascade.`
           )
           return true

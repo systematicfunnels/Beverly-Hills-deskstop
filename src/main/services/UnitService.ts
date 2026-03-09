@@ -15,6 +15,12 @@ export interface Unit {
 }
 
 class UnitService {
+  private logDebug(message: string, ...args: unknown[]): void {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(message, ...args)
+    }
+  }
+
   public getAll(): Unit[] {
     return dbService.query<Unit>(`
       SELECT u.*, p.name as project_name 
@@ -79,7 +85,7 @@ class UnitService {
   public delete(id: number): boolean {
     return dbService.transaction(() => {
       try {
-        console.log(`[UNIT_SERVICE] Starting deletion for unit ID: ${id}`)
+        this.logDebug(`[UNIT_SERVICE] Starting deletion for unit ID: ${id}`)
 
         // 1. Check if unit exists
         const unit = dbService.get('SELECT id FROM units WHERE id = ?', [id])
@@ -98,7 +104,7 @@ class UnitService {
         const result = dbService.run('DELETE FROM units WHERE id = ?', [id])
 
         if (result.changes > 0) {
-          console.log(
+          this.logDebug(
             `[UNIT_SERVICE] Successfully deleted unit ${id} and all related data via cascade.`
           )
           return true
@@ -117,7 +123,7 @@ class UnitService {
    * Explodes one Excel row into multiple entities.
    */
   public async importLedger(projectId: number, rows: Record<string, unknown>[]): Promise<boolean> {
-    console.log(`[IMPORT] Starting ledger import for project ${projectId} with ${rows.length} rows`)
+    this.logDebug(`[IMPORT] Starting ledger import for project ${projectId} with ${rows.length} rows`)
 
     return dbService.transaction(() => {
       // 1. Ensure project exists
@@ -189,7 +195,7 @@ class UnitService {
                   base_amount,
                   arrears || 0,
                   Number(base_amount) + (arrears || 0), // Initial final_amount, will update with add-ons
-                  'Generated', // Aligned with schema default
+                  'Pending',
                   0, // is_paid
                   0 // is_sent
                 ]
@@ -243,11 +249,11 @@ class UnitService {
   }
 
   public bulkCreate(units: Unit[]): boolean {
-    console.log(`[DEBUG] UnitService.bulkCreate called with ${units.length} units`)
+    this.logDebug(`[DEBUG] UnitService.bulkCreate called with ${units.length} units`)
 
     // Diagnostic: Check if we have any projects at all
     const projectCount = dbService.get<{ count: number }>('SELECT count(*) as count FROM projects')
-    console.log(`[DEBUG] Total projects in database: ${projectCount?.count}`)
+    this.logDebug(`[DEBUG] Total projects in database: ${projectCount?.count}`)
 
     return dbService.transaction(() => {
       for (const [index, unit] of units.entries()) {
