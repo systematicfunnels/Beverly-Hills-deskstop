@@ -37,12 +37,16 @@ class MaintenanceBillService {
       MaintenanceBill & { letterhead_path?: string; qr_code_path?: string }
     >(
       `
-      SELECT l.*, u.unit_number, u.owner_name, u.plot, u.bungalow, p.name as project_name, p.bank_name, p.account_no, p.ifsc_code, p.letterhead_path, p.qr_code_path
+      SELECT l.id, l.project_id, l.unit_id, l.year, l.maintenance, l.na_tax, l.rd_na, 
+             l.cable, l.other_charges, l.penalty, l.discount, l.year_total, l.due_date, 
+             l.status, l.pdf_path, l.generated_date, u.unit_number, u.owner_name, 
+             u.plot, u.bungalow, p.name as project_name, p.bank_name, p.account_no, 
+             p.ifsc_code, p.letterhead_path, p.qr_code_path
       FROM unit_maintenance_bills l
       JOIN units u ON l.unit_id = u.id
       JOIN projects p ON l.project_id = p.id
       WHERE l.id = ?
-    `,
+      `,
       [billId]
     )
 
@@ -58,6 +62,9 @@ class MaintenanceBillService {
     if (bill.letterhead_path) {
       try {
         const letterheadBytes = await fs.promises.readFile(bill.letterhead_path)
+        if (letterheadBytes.length === 0) {
+          throw new Error('Empty letterhead file')
+        }
         const letterheadImage = await pdfDoc.embedPng(letterheadBytes)
         page.drawImage(letterheadImage, {
           x: 0,
@@ -66,7 +73,9 @@ class MaintenanceBillService {
           height: 100
         })
       } catch (e) {
-        console.error('Failed to embed letterhead', e)
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('Failed to embed letterhead', e)
+        }
         this.drawDefaultHeader(
           page,
           width,
@@ -700,10 +709,12 @@ class MaintenanceBillService {
             }
 
             if (!unit) {
+            if (process.env.NODE_ENV !== 'production') {
               console.log(
                 `Creating unit: project_id=${projectId}, unit_number=${unitNo || (bill.plot as string)}`
               )
-              try {
+            }
+            try {
                 // Ensure unit_number is not null for the constraint
                 const finalUnitNumber = unitNo || (bill.plot as string) || 'Unknown'
 
@@ -725,26 +736,30 @@ class MaintenanceBillService {
                 )
                 unit = { id: result.lastInsertRowid as number }
               } catch (insertError: unknown) {
-                const errorMessage =
-                  insertError instanceof Error ? insertError.message : String(insertError)
-                console.error(
-                  `[DEBUG] Failed to insert unit: project_id=${projectId}, unit=${unitNo}. Error: ${errorMessage}`
-                )
+                if (process.env.NODE_ENV !== 'production') {
+                  const errorMessage = insertError instanceof Error ? insertError.message : String(insertError)
+                  console.error(
+                    `[DEBUG] Failed to insert unit: project_id=${projectId}, unit=${unitNo}. Error: ${errorMessage}`
+                  )
+                }
                 throw insertError // Re-throw to be caught by the outer row-level try-catch
               }
             } else {
               // Update existing unit info if needed
-              // Use COALESCE to avoid overwriting with nulls if the import row is partial
-              dbService.run(
-                `
+              dbService.run(`
                 UPDATE units SET 
-                  owner_name = COALESCE(NULLIF(?, ''), owner_name),
-                  plot = COALESCE(NULLIF(?, ''), plot),
-                  bungalow = COALESCE(NULLIF(?, ''), bungalow),
+                  owner_name = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE owner_name END,
+                  plot = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE plot END,
+                  bungalow = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE bungalow END,
                   area_sqft = CASE WHEN ? > 0 THEN ? ELSE area_sqft END
                 WHERE id = ?
               `,
-                [bill.owner_name, bill.plot, bill.bungalow, bill.area_sqft, bill.area_sqft, unit.id]
+                [
+                  bill.owner_name, bill.owner_name, bill.owner_name,
+                  bill.plot, bill.plot, bill.plot,
+                  bill.bungalow, bill.bungalow, bill.bungalow,
+                  bill.area_sqft, bill.area_sqft, unit.id
+                ]
               )
             }
 

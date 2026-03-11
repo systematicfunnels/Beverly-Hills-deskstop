@@ -22,8 +22,9 @@ export interface Project {
 
 class ProjectService {
   private logDebug(message: string, ...args: unknown[]): void {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(message, ...args)
+    const isDevelopment = process.env.NODE_ENV === 'development' || process.env.ELECTRON_IS_DEV === '1'
+    if (isDevelopment) {
+      console.log(`[PROJECTS] ${message}`, ...args)
     }
   }
 

@@ -34,10 +34,14 @@ class DatabaseService {
     // Diagnostic check
     const violations = this.db.pragma('foreign_key_check') as unknown[]
     if (violations && violations.length > 0) {
-      console.error(
-        '[DATABASE] Foreign key violations detected after initialization:',
-        JSON.stringify(violations, null, 2)
-      )
+      if (process.env.NODE_ENV !== 'production') {
+        console.error(
+          '[DATABASE] Foreign key violations detected after initialization:',
+          JSON.stringify(violations, null, 2)
+        )
+      } else {
+        console.error('[DATABASE] Data integrity issues detected during startup')
+      }
     }
   }
 

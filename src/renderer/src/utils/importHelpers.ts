@@ -11,9 +11,12 @@ export interface NormalizedRow {
  */
 export const normalizeRow = (row: Record<string, unknown>): NormalizedRow => {
   const normalizedRow: NormalizedRow = {}
-  Object.keys(row).forEach((key) => {
-    const normalizedKey = String(key).toLowerCase().trim()
-    normalizedRow[normalizedKey] = row[key]
+  // Type-safe iteration over object keys
+  Object.entries(row).forEach(([key, value]) => {
+    if (typeof key === 'string') {
+      const normalizedKey = key.toLowerCase().trim()
+      normalizedRow[normalizedKey] = value
+    }
   })
   return normalizedRow
 }

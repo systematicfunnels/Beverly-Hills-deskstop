@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -53,7 +53,6 @@ const Projects: React.FC = () => {
 
   const [form] = Form.useForm()
   const location = useLocation()
-  const navigate = useNavigate()
 
   const fetchProjects = async (): Promise<void> => {
     setLoading(true)
@@ -364,11 +363,15 @@ const Projects: React.FC = () => {
     }
   }
 
-  const handleViewUnits = useCallback((projectId: number, projectName: string) => {
-    navigate('/units', { state: { projectId, projectName } })
-  }, [navigate])
-
+  
   const columns = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+      align: 'center' as const
+    },
     {
       title: 'Name',
       dataIndex: 'name',
@@ -386,20 +389,15 @@ const Projects: React.FC = () => {
       key: 'city'
     },
     {
-      title: 'Units',
-      dataIndex: 'unit_count',
-      key: 'unit_count',
-      align: 'center' as const,
-      render: (count: number, record: Project) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => handleViewUnits(record.id!, record.name)}
-          disabled={!count || count === 0}
-        >
-          {count || 0}
-        </Button>
-      )
+      title: 'State',
+      dataIndex: 'state',
+      key: 'state'
+    },
+    {
+      title: 'Pincode',
+      dataIndex: 'pincode',
+      key: 'pincode',
+      width: 100
     },
     {
       title: 'Status',
@@ -410,17 +408,12 @@ const Projects: React.FC = () => {
       )
     },
     {
-      title: 'Created At',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (date: string) => (date ? new Date(date).toLocaleDateString() : '-')
-    },
-    {
-      title: 'Actions',
+      title: 'Action',
       key: 'actions',
-      align: 'right' as const,
+      align: 'center' as const,
+      width: 120,
       render: (_: unknown, record: Project) => (
-        <Space size="middle">
+        <Space size="small">
           <Tooltip title="Manage Rates">
             <Button onClick={() => handleRates(record)} size="small">
               Rates
