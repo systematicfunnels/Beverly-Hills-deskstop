@@ -157,6 +157,16 @@ const Units: React.FC = () => {
         getValue(['sector', 'sector no', 'sector_no', 'sector number', 'block']) || ''
       ).trim()
 
+      const inferSectorFromUnitNumber = (candidateUnitNumber: string): string => {
+        const normalizedCandidate = String(candidateUnitNumber || '').trim()
+        if (!normalizedCandidate) return ''
+        const hyphenIndex = normalizedCandidate.indexOf('-')
+        if (hyphenIndex > 0) return normalizedCandidate.slice(0, hyphenIndex).trim().toUpperCase()
+        const slashIndex = normalizedCandidate.indexOf('/')
+        if (slashIndex > 0) return normalizedCandidate.slice(0, slashIndex).trim().toUpperCase()
+        return ''
+      }
+
       // For ledgers with repeated plot numbers across sectors, compose a stable unique unit number.
       let unitNumber = explicitUnitNumber
       if (!unitNumber && plotNumber) {
@@ -227,12 +237,14 @@ const Units: React.FC = () => {
         getValue(['contact', 'contact number', 'mobile', 'phone', 'phone number']) || ''
       ).trim()
       const emailAddress = String(getValue(['email', 'e-mail', 'mail']) || '').trim()
+      const normalizedSectorCode = sectorNumber.trim().toUpperCase() || inferSectorFromUnitNumber(unitNumber)
 
       return {
         ...row,
         previewId,
         project_id: effectiveProjectId || 0,
         unit_number: unitNumber,
+        sector_code: normalizedSectorCode || undefined,
         unit_type: (() => {
           const raw = String(
             getValue(['bungalow', 'type', 'unit type', 'category', 'usage']) ||
@@ -369,10 +381,14 @@ const Units: React.FC = () => {
 
   const handleModalOk = async (): Promise<void> => {
     const values = await form.validateFields()
+    const payload = {
+      ...values,
+      sector_code: String(values.sector_code || '').trim().toUpperCase() || undefined
+    }
     if (editingUnit?.id) {
-      await window.api.units.update(editingUnit.id, values)
+      await window.api.units.update(editingUnit.id, payload)
     } else {
-      await window.api.units.create(values)
+      await window.api.units.create(payload)
     }
     setIsModalOpen(false)
     fetchData()
@@ -526,6 +542,7 @@ const Units: React.FC = () => {
 
         return {
           unit_number: row.unit_number,
+          sector_code: row.sector_code,
           owner_name: row.owner_name,
           unit_type: row.unit_type,
           area_sqft: row.area_sqft,
@@ -577,6 +594,7 @@ const Units: React.FC = () => {
       'previewid',
       'project_id',
       'unit_number',
+      'sector_code',
       'owner_name',
       'unit_type',
       'area_sqft',
@@ -584,7 +602,12 @@ const Units: React.FC = () => {
       'contact_number',
       'email',
       'penalty',
-      'years'
+      'years',
+      'sector',
+      'sector no',
+      'sector_no',
+      'sector number',
+      'block'
     ])
 
     const orderedHeaders: string[] = []
@@ -670,6 +693,17 @@ const Units: React.FC = () => {
       dataIndex: 'unit_number',
       key: 'unit_number',
       sorter: (a: Unit, b: Unit) => a.unit_number.localeCompare(b.unit_number)
+    },
+    {
+      title: 'Sector',
+      dataIndex: 'sector_code',
+      key: 'sector_code',
+      sorter: (a: Unit, b: Unit) =>
+        (a.sector_code || '').localeCompare(b.sector_code || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        }),
+      render: (text: string) => text || '-'
     },
     {
       title: 'Type',
@@ -797,7 +831,7 @@ const Units: React.FC = () => {
                 icon={<SolutionOutlined />}
                 onClick={() => navigate('/billing', { state: { unitIds: selectedRowKeys } })}
               >
-                Batch Letters ({selectedRowKeys.length})
+                Generate Maintenance Letters ({selectedRowKeys.length})
               </Button>
               <Button danger icon={<DeleteOutlined />} onClick={handleBulkDelete}>
                 Delete ({selectedRowKeys.length})
@@ -1134,6 +1168,33 @@ const Units: React.FC = () => {
                       responsive: ['xs']
                     },
                     {
+                      title: 'Sector',
+                      dataIndex: 'sector_code',
+                      key: 'sector_code',
+                      width: 90,
+                      sorter: (a: ImportUnitPreview, b: ImportUnitPreview) =>
+                        String(a.sector_code || '').localeCompare(String(b.sector_code || ''), undefined, {
+                          numeric: true,
+                          sensitivity: 'base'
+                        }),
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Input
+                          size="small"
+                          value={text}
+                          onChange={(e) =>
+                            handlePreviewCellChange(
+                              record.previewId,
+                              'sector_code',
+                              e.target.value.toUpperCase()
+                            )
+                          }
+                          placeholder="A/B/C"
+                          style={{ width: '100%', minWidth: '70px' }}
+                        />
+                      ),
+                      responsive: ['sm']
+                    },
+                    {
                       title: 'Owner',
                       dataIndex: 'owner_name',
                       key: 'owner_name',
@@ -1342,6 +1403,9 @@ const Units: React.FC = () => {
             </Form.Item>
             <Form.Item name="unit_number" label="Unit Number" rules={[{ required: true }]}>
               <Input />
+            </Form.Item>
+            <Form.Item name="sector_code" label="Sector Code">
+              <Input placeholder="e.g. A, B, C, 1" />
             </Form.Item>
             <Form.Item name="unit_type" label="Unit Type" rules={[{ required: true }]}>
               <Select>

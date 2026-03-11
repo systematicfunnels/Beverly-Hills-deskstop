@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import {
   Project,
+  ProjectSectorPaymentConfig,
   Unit,
   MaintenanceLetter,
   MaintenanceRate,
@@ -22,6 +23,11 @@ declare global {
         getById: (id: number) => Promise<Project | undefined>
         create: (project: Project) => Promise<number>
         update: (id: number, project: Partial<Project>) => Promise<boolean>
+        getSectorPaymentConfigs: (projectId: number) => Promise<ProjectSectorPaymentConfig[]>
+        saveSectorPaymentConfigs: (
+          projectId: number,
+          configs: Partial<ProjectSectorPaymentConfig>[]
+        ) => Promise<boolean>
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>
         getDashboardStats: (

@@ -20,6 +20,21 @@ export interface Project {
   unit_count?: number
 }
 
+export interface ProjectSectorPaymentConfig {
+  id?: number
+  project_id: number
+  sector_code: string
+  account_name?: string
+  bank_name?: string
+  account_no?: string
+  ifsc_code?: string
+  branch?: string
+  branch_address?: string
+  qr_code_path?: string
+  created_at?: string
+  updated_at?: string
+}
+
 class ProjectService {
   private logDebug(message: string, ...args: unknown[]): void {
     const isDevelopment = process.env.NODE_ENV === 'development' || process.env.ELECTRON_IS_DEV === '1'
@@ -278,6 +293,51 @@ class ProjectService {
       totalBilled,
       totalOutstanding: totalBilled - totalCollected
     }
+  }
+
+  public getSectorPaymentConfigs(projectId: number): ProjectSectorPaymentConfig[] {
+    return dbService.query<ProjectSectorPaymentConfig>(
+      `
+      SELECT *
+      FROM project_sector_payment_configs
+      WHERE project_id = ?
+      ORDER BY sector_code COLLATE NOCASE ASC
+    `,
+      [projectId]
+    )
+  }
+
+  public saveSectorPaymentConfigs(
+    projectId: number,
+    configs: Partial<ProjectSectorPaymentConfig>[]
+  ): boolean {
+    return dbService.transaction(() => {
+      dbService.run('DELETE FROM project_sector_payment_configs WHERE project_id = ?', [projectId])
+
+      for (const config of configs) {
+        const sectorCode = String(config.sector_code || '').trim().toUpperCase()
+        if (!sectorCode) continue
+
+        dbService.run(
+          `INSERT INTO project_sector_payment_configs (
+            project_id, sector_code, account_name, bank_name, account_no, ifsc_code, branch, branch_address, qr_code_path
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            projectId,
+            sectorCode,
+            config.account_name,
+            config.bank_name,
+            config.account_no,
+            config.ifsc_code,
+            config.branch,
+            config.branch_address,
+            config.qr_code_path
+          ]
+        )
+      }
+
+      return true
+    })
   }
 }
 

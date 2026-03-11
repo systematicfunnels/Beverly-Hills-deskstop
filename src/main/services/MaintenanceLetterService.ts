@@ -26,6 +26,7 @@ export interface MaintenanceLetter {
   account_no?: string
   ifsc_code?: string
   qr_code_path?: string
+  sector_code?: string
   add_ons_total?: number
   unit_type?: string
 }
@@ -173,12 +174,35 @@ class MaintenanceLetterService {
   }
 
   public async generatePdf(letterId: number): Promise<string> {
+    const sectorExpr = `
+      CASE
+        WHEN u.sector_code IS NOT NULL AND TRIM(u.sector_code) <> '' THEN UPPER(TRIM(u.sector_code))
+        WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '-') > 0 THEN
+          UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '-') - 1)))
+        WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '/') > 0 THEN
+          UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '/') - 1)))
+        ELSE ''
+      END
+    `
+
     const letter = dbService.get<MaintenanceLetter>(
       `
-      SELECT l.*, u.unit_number, u.owner_name, p.name as project_name, p.bank_name, p.account_no, p.ifsc_code, p.qr_code_path
+      SELECT
+        l.*,
+        u.unit_number,
+        u.owner_name,
+        p.name as project_name,
+        ${sectorExpr} as sector_code,
+        COALESCE(psc.bank_name, p.bank_name) as bank_name,
+        COALESCE(psc.account_no, p.account_no) as account_no,
+        COALESCE(psc.ifsc_code, p.ifsc_code) as ifsc_code,
+        COALESCE(psc.qr_code_path, p.qr_code_path) as qr_code_path
       FROM maintenance_letters l
       JOIN units u ON l.unit_id = u.id
       JOIN projects p ON l.project_id = p.id
+      LEFT JOIN project_sector_payment_configs psc
+        ON psc.project_id = p.id
+       AND UPPER(TRIM(psc.sector_code)) = ${sectorExpr}
       WHERE l.id = ?
     `,
       [letterId]

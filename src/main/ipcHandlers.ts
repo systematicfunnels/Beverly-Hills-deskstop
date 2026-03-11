@@ -1,6 +1,10 @@
 import { ipcMain, shell } from 'electron'
 import { dbService } from './db/database'
-import { projectService, Project } from './services/ProjectService'
+import {
+  projectService,
+  Project,
+  ProjectSectorPaymentConfig
+} from './services/ProjectService'
 import { unitService, Unit } from './services/UnitService'
 import { maintenanceLetterService, MaintenanceLetter } from './services/MaintenanceLetterService'
 import { paymentService, Payment } from './services/PaymentService'
@@ -47,6 +51,54 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('update-project', (_, id: number, project: Partial<Project>): boolean => {
     return projectService.update(id, project)
   })
+
+  ipcMain.handle(
+    'get-project-sector-configs',
+    (_, projectId: number): ProjectSectorPaymentConfig[] => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      return projectService.getSectorPaymentConfigs(projectId)
+    }
+  )
+
+  ipcMain.handle(
+    'save-project-sector-configs',
+    (_, projectId: number, configs: Partial<ProjectSectorPaymentConfig>[]): boolean => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      if (!Array.isArray(configs)) {
+        throw new Error('Invalid sector payment configs payload')
+      }
+
+      const seenSectors = new Set<string>()
+      for (const config of configs) {
+        const hasAnyValue = [
+          config.sector_code,
+          config.account_name,
+          config.bank_name,
+          config.account_no,
+          config.ifsc_code,
+          config.branch,
+          config.branch_address,
+          config.qr_code_path
+        ].some((value) => sanitizeText(value).length > 0)
+        if (!hasAnyValue) continue
+
+        const normalizedSector = sanitizeText(config.sector_code).toUpperCase()
+        if (!normalizedSector) {
+          throw new Error('Sector code is required for each sector payment config row')
+        }
+        if (seenSectors.has(normalizedSector)) {
+          throw new Error(`Duplicate sector code: ${normalizedSector}`)
+        }
+        seenSectors.add(normalizedSector)
+      }
+
+      return projectService.saveSectorPaymentConfigs(projectId, configs)
+    }
+  )
 
   ipcMain.handle('delete-project', (_, id: number): boolean => {
     return projectService.delete(id)

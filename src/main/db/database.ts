@@ -64,6 +64,7 @@ class DatabaseService {
       // List of all tables in dependency order (top-down)
       const allTables = [
         'projects',
+        'project_sector_payment_configs',
         'units',
         'maintenance_rates',
         'maintenance_slabs',
@@ -192,7 +193,13 @@ class DatabaseService {
           OR project_id NOT IN (SELECT id FROM projects)
         `)
 
-        // 4. Clean up unit project_id references (the root cause of many FK issues)
+        // 4. Delete sector payment configs without valid project
+        this.db.exec(`
+          DELETE FROM project_sector_payment_configs
+          WHERE project_id NOT IN (SELECT id FROM projects)
+        `)
+
+        // 5. Clean up unit project_id references (the root cause of many FK issues)
         this.db.exec(`
           DELETE FROM units 
           WHERE project_id NOT IN (SELECT id FROM projects)
@@ -329,10 +336,39 @@ class DatabaseService {
 
         if (!columns.some((c) => c.name === 'unit_type'))
           this.db.exec("ALTER TABLE units ADD COLUMN unit_type TEXT DEFAULT 'Bungalow'")
+        if (!columns.some((c) => c.name === 'sector_code'))
+          this.db.exec('ALTER TABLE units ADD COLUMN sector_code TEXT')
         if (!columns.some((c) => c.name === 'status'))
           this.db.exec("ALTER TABLE units ADD COLUMN status TEXT DEFAULT 'Active'")
         if (!columns.some((c) => c.name === 'penalty'))
           this.db.exec('ALTER TABLE units ADD COLUMN penalty REAL DEFAULT 0')
+
+        // Backfill sector code from unit number patterns like "A-101" / "B/202".
+        this.db.exec(`
+          UPDATE units
+          SET sector_code = UPPER(
+            TRIM(
+              CASE
+                WHEN INSTR(TRIM(COALESCE(unit_number, '')), '-') > 0 THEN
+                  SUBSTR(TRIM(unit_number), 1, INSTR(TRIM(unit_number), '-') - 1)
+                WHEN INSTR(TRIM(COALESCE(unit_number, '')), '/') > 0 THEN
+                  SUBSTR(TRIM(unit_number), 1, INSTR(TRIM(unit_number), '/') - 1)
+                ELSE COALESCE(sector_code, '')
+              END
+            )
+          )
+          WHERE (sector_code IS NULL OR TRIM(sector_code) = '')
+            AND (
+              INSTR(TRIM(COALESCE(unit_number, '')), '-') > 0
+              OR INSTR(TRIM(COALESCE(unit_number, '')), '/') > 0
+            )
+        `)
+
+        this.db.exec(`
+          UPDATE units
+          SET sector_code = UPPER(TRIM(sector_code))
+          WHERE sector_code IS NOT NULL AND TRIM(sector_code) <> ''
+        `)
       }
 
       // 4. Migrate 'payments' table

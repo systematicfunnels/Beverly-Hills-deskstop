@@ -4,6 +4,7 @@ export interface Unit {
   id?: number
   project_id: number
   unit_number: string
+  sector_code?: string
   unit_type?: string
   area_sqft: number
   owner_name: string
@@ -19,6 +20,33 @@ class UnitService {
     if (process.env.NODE_ENV !== 'production') {
       console.log(message, ...args)
     }
+  }
+
+  private extractSectorFromUnitNumber(unitNumber: unknown): string {
+    const normalizedUnitNumber = String(unitNumber || '').trim()
+    if (!normalizedUnitNumber) return ''
+
+    const hyphenIndex = normalizedUnitNumber.indexOf('-')
+    if (hyphenIndex > 0) {
+      return normalizedUnitNumber.slice(0, hyphenIndex).trim().toUpperCase()
+    }
+
+    const slashIndex = normalizedUnitNumber.indexOf('/')
+    if (slashIndex > 0) {
+      return normalizedUnitNumber.slice(0, slashIndex).trim().toUpperCase()
+    }
+
+    return ''
+  }
+
+  private normalizeSectorCode(sectorCode: unknown, unitNumber: unknown): string | null {
+    const explicitSector = String(sectorCode || '').trim()
+    if (explicitSector) {
+      return explicitSector.toUpperCase()
+    }
+
+    const inferredSector = this.extractSectorFromUnitNumber(unitNumber)
+    return inferredSector || null
   }
 
   private syncMaintenanceLetterStatus(letterId: number): void {
@@ -79,13 +107,15 @@ class UnitService {
   }
 
   public create(unit: Unit): number {
+    const normalizedSectorCode = this.normalizeSectorCode(unit.sector_code, unit.unit_number)
     const result = dbService.run(
       `INSERT INTO units (
-        project_id, unit_number, unit_type, area_sqft, owner_name, contact_number, email, status, penalty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        project_id, unit_number, sector_code, unit_type, area_sqft, owner_name, contact_number, email, status, penalty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unit.project_id,
         unit.unit_number,
+        normalizedSectorCode,
         unit.unit_type || 'Bungalow',
         unit.area_sqft,
         unit.owner_name,
@@ -99,9 +129,19 @@ class UnitService {
   }
 
   public update(id: number, unit: Partial<Unit>): boolean {
+    const normalizedUnit: Partial<Unit> = { ...unit }
+    if ('sector_code' in normalizedUnit || 'unit_number' in normalizedUnit) {
+      const normalizedSectorCode = this.normalizeSectorCode(
+        normalizedUnit.sector_code,
+        normalizedUnit.unit_number
+      )
+      normalizedUnit.sector_code = normalizedSectorCode === null ? undefined : normalizedSectorCode
+    }
+
     const allowedColumns = [
       'project_id',
       'unit_number',
+      'sector_code',
       'unit_type',
       'area_sqft',
       'owner_name',
@@ -110,14 +150,14 @@ class UnitService {
       'status',
       'penalty'
     ]
-    const keys = Object.keys(unit).filter(
+    const keys = Object.keys(normalizedUnit).filter(
       (key) => allowedColumns.includes(key) && key !== 'id' && key !== 'project_name'
     )
 
     if (keys.length === 0) return false
 
     const fields = keys.map((key) => `${key} = ?`).join(', ')
-    const values = keys.map((key) => unit[key as keyof Unit])
+    const values = keys.map((key) => normalizedUnit[key as keyof Unit])
 
     const result = dbService.run(`UPDATE units SET ${fields} WHERE id = ?`, [...values, id])
     return result.changes > 0
@@ -177,6 +217,7 @@ class UnitService {
           let unitId: number
           const unitNumber = String(row.unit_number || '').trim()
           if (!unitNumber) continue
+          const normalizedSectorCode = this.normalizeSectorCode(row.sector_code, unitNumber)
 
           const existingUnit = dbService.get<{ id: number }>(
             'SELECT id FROM units WHERE project_id = ? AND unit_number = ?',
@@ -223,10 +264,17 @@ class UnitService {
             if (row.status) {
               dbService.run('UPDATE units SET status = ? WHERE id = ?', [row.status as string, unitId])
             }
+            if (normalizedSectorCode !== null || row.sector_code !== undefined) {
+              dbService.run('UPDATE units SET sector_code = ? WHERE id = ?', [
+                normalizedSectorCode,
+                unitId
+              ])
+            }
           } else {
             unitId = this.create({
               project_id: projectId,
               unit_number: unitNumber,
+              sector_code: normalizedSectorCode || undefined,
               owner_name: (row.owner_name as string) || 'Unknown',
               unit_type: (row.unit_type as string) || 'Bungalow',
               area_sqft: Number(row.area_sqft) || 1000, // Default if missing

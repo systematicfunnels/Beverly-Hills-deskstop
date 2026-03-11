@@ -1085,7 +1085,7 @@ const Payments: React.FC = () => {
         onCancel={() => setIsBulkModalOpen(false)}
         confirmLoading={loading}
         width={1000}
-        okText="Record Payments"
+        okText="Record Bulk Payments"
       >
         <Form form={bulkForm} layout="vertical">
           <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>

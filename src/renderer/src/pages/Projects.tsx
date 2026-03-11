@@ -25,13 +25,19 @@ import {
   SearchOutlined,
   BankOutlined
 } from '@ant-design/icons'
-import { Project } from '@preload/types'
+import { Project, ProjectSectorPaymentConfig } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
 
 const { Option } = Select
 const { TabPane } = Tabs
-const { Text } = Typography
+const { Text, Paragraph } = Typography
+
+const getDefaultSectorConfigs = (): Partial<ProjectSectorPaymentConfig>[] => [
+  { sector_code: 'A' },
+  { sector_code: 'B' },
+  { sector_code: 'C' }
+]
 
 const Projects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([])
@@ -50,6 +56,9 @@ const Projects: React.FC = () => {
   // Import summary state
   const [importSummary, setImportSummary] = useState<Partial<Project>[]>([])
   const [showImportSummary, setShowImportSummary] = useState(false)
+  const [sectorConfigs, setSectorConfigs] = useState<Partial<ProjectSectorPaymentConfig>[]>(
+    getDefaultSectorConfigs()
+  )
 
   const [form] = Form.useForm()
   const location = useLocation()
@@ -124,7 +133,32 @@ const Projects: React.FC = () => {
   const handleAdd = (): void => {
     setEditingProject(null)
     form.resetFields()
+    setSectorConfigs(getDefaultSectorConfigs())
     setIsModalOpen(true)
+  }
+
+  const handleSectorConfigChange = (
+    index: number,
+    key: keyof ProjectSectorPaymentConfig,
+    value: string
+  ): void => {
+    setSectorConfigs((prev) =>
+      prev.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+        return {
+          ...item,
+          [key]: key === 'sector_code' ? value.toUpperCase() : value
+        }
+      })
+    )
+  }
+
+  const handleAddSectorConfigRow = (): void => {
+    setSectorConfigs((prev) => [...prev, { sector_code: '' }])
+  }
+
+  const handleRemoveSectorConfigRow = (index: number): void => {
+    setSectorConfigs((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
   }
 
   const handleImport = async (file: File): Promise<boolean> => {
@@ -277,13 +311,20 @@ const Projects: React.FC = () => {
     return false
   }
 
-  const handleEdit = (record: Project): void => {
+  const handleEdit = async (record: Project): Promise<void> => {
     setEditingProject(record)
     form.setFieldsValue({
       ...record,
       status: record.status || 'Active',
       city: record.city || 'Ahmedabad'
     })
+    try {
+      const configs = await window.api.projects.getSectorPaymentConfigs(record.id!)
+      setSectorConfigs(configs.length > 0 ? configs : getDefaultSectorConfigs())
+    } catch (error) {
+      console.error('Failed to fetch sector payment configs:', error)
+      setSectorConfigs(getDefaultSectorConfigs())
+    }
     setIsModalOpen(true)
   }
 
@@ -349,13 +390,54 @@ const Projects: React.FC = () => {
   const handleModalOk = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
+      const preparedSectorConfigs = sectorConfigs
+        .map((config) => ({
+          sector_code: String(config.sector_code || '').trim().toUpperCase(),
+          account_name: String(config.account_name || '').trim(),
+          bank_name: String(config.bank_name || '').trim(),
+          account_no: String(config.account_no || '').trim(),
+          ifsc_code: String(config.ifsc_code || '').trim().toUpperCase(),
+          branch: String(config.branch || '').trim(),
+          branch_address: String(config.branch_address || '').trim(),
+          qr_code_path: String(config.qr_code_path || '').trim()
+        }))
+        .filter((config) =>
+          [
+            config.sector_code,
+            config.account_name,
+            config.bank_name,
+            config.account_no,
+            config.ifsc_code,
+            config.branch,
+            config.branch_address,
+            config.qr_code_path
+          ].some((value) => value.length > 0)
+        )
+
+      const seenSectors = new Set<string>()
+      for (const config of preparedSectorConfigs) {
+        if (!config.sector_code) {
+          message.error('Sector code is required for each sector payment row')
+          return
+        }
+        if (seenSectors.has(config.sector_code)) {
+          message.error(`Duplicate sector code: ${config.sector_code}`)
+          return
+        }
+        seenSectors.add(config.sector_code)
+      }
+
+      let projectId: number
       if (editingProject?.id) {
         await window.api.projects.update(editingProject.id, values)
+        projectId = editingProject.id
         message.success('Project updated successfully')
       } else {
-        await window.api.projects.create(values)
+        projectId = await window.api.projects.create(values)
         message.success('Project created successfully')
       }
+
+      await window.api.projects.saveSectorPaymentConfigs(projectId, preparedSectorConfigs)
       setIsModalOpen(false)
       fetchProjects()
     } catch (error) {
@@ -420,7 +502,7 @@ const Projects: React.FC = () => {
             </Button>
           </Tooltip>
           <Tooltip title="Edit Project">
-            <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
+            <Button icon={<EditOutlined />} onClick={() => void handleEdit(record)} size="small" />
           </Tooltip>
           <Tooltip title="Delete Project">
             <Button
@@ -639,6 +721,108 @@ const Projects: React.FC = () => {
                 >
                   <Input />
                 </Form.Item>
+              </div>
+            </TabPane>
+
+            <TabPane tab="Sector Payment QR" key="sector-payment">
+              <div style={{ marginTop: 16 }}>
+                <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                  Configure sector-specific bank and barcode details. Maintenance letters will use
+                  these values by sector and fallback to project bank details if a sector is not
+                  configured.
+                </Paragraph>
+
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  {sectorConfigs.map((config, index) => (
+                    <Card
+                      key={`sector-config-${index}`}
+                      size="small"
+                      title={`Sector Config ${index + 1}`}
+                      extra={
+                        <Button
+                          size="small"
+                          danger
+                          onClick={() => handleRemoveSectorConfigRow(index)}
+                          disabled={sectorConfigs.length <= 1}
+                        >
+                          Remove
+                        </Button>
+                      }
+                    >
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '12px'
+                        }}
+                      >
+                        <Input
+                          value={String(config.sector_code || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'sector_code', e.target.value)
+                          }
+                          placeholder="Sector Code (A/B/C)"
+                        />
+                        <Input
+                          value={String(config.account_name || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'account_name', e.target.value)
+                          }
+                          placeholder="Account Name"
+                        />
+                        <Input
+                          value={String(config.bank_name || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'bank_name', e.target.value)
+                          }
+                          placeholder="Bank Name"
+                        />
+                        <Input
+                          value={String(config.account_no || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'account_no', e.target.value)
+                          }
+                          placeholder="Account Number"
+                        />
+                        <Input
+                          value={String(config.ifsc_code || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'ifsc_code', e.target.value)
+                          }
+                          placeholder="IFSC Code"
+                        />
+                        <Input
+                          value={String(config.branch || '')}
+                          onChange={(e) => handleSectorConfigChange(index, 'branch', e.target.value)}
+                          placeholder="Branch"
+                        />
+                        <Input
+                          value={String(config.branch_address || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'branch_address', e.target.value)
+                          }
+                          placeholder="Branch Address"
+                          style={{ gridColumn: 'span 2' }}
+                        />
+                        <Input
+                          value={String(config.qr_code_path || '')}
+                          onChange={(e) =>
+                            handleSectorConfigChange(index, 'qr_code_path', e.target.value)
+                          }
+                          placeholder="QR Image Path (.png/.jpg/.jpeg)"
+                          style={{ gridColumn: 'span 2' }}
+                        />
+                      </div>
+                    </Card>
+                  ))}
+
+                  <Space>
+                    <Button onClick={handleAddSectorConfigRow}>Add Sector Row</Button>
+                    <Button onClick={() => setSectorConfigs(getDefaultSectorConfigs())}>
+                      Reset to A/B/C
+                    </Button>
+                  </Space>
+                </Space>
               </div>
             </TabPane>
           </Tabs>

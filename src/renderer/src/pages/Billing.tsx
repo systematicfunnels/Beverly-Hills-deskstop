@@ -271,9 +271,9 @@ const Billing: React.FC = () => {
         })
         message.success('Maintenance letters generated successfully')
         notification.info({
-          message: 'Next Step: Record Payments',
+          message: 'Next Step: Record Payment',
           description:
-            'Letters are created with Pending status. Status changes to Paid only after recording payment in the Payments page.'
+            'Letters are created with Pending status. Status changes to Paid only after recording payment in the Payments & Receipts page.'
         })
         setIsModalOpen(false)
         setBatchModalStep('config')

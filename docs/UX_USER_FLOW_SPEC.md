@@ -59,15 +59,16 @@ Use these labels consistently across all screens and messages:
 #### Primary Tasks
 1. Add project manually.
 2. Edit project details and banking metadata.
-3. Open rates modal for project.
-4. Filter/search projects.
+3. Configure sector-wise payment bank + QR settings (e.g. Sector A/B/C).
+4. Open rates modal for project.
+5. Filter/search projects.
 
 #### Micro Touchpoints
 1. Header actions: `Add Project`, `Delete Selected`.
 2. Inline filters: search, status, city.
 3. Filter chips with per-chip clear and `Clear all`.
 4. Row actions: `Edit`, `Delete`, `Rates`.
-5. Form tabs: `Basic Information`, `Bank Details`.
+5. Form tabs: `Basic Information`, `Bank Details`, `Sector Payment QR`.
 
 #### Validation & Error States
 1. Required: project name.
@@ -80,7 +81,8 @@ Use these labels consistently across all screens and messages:
 #### Acceptance Checks
 1. Creating project persists and appears immediately in table.
 2. Rates action opens the correct project context.
-3. Filter chips always mirror active filters.
+3. Sector payment config is saved per project and retrievable on edit.
+4. Filter chips always mirror active filters.
 
 ---
 
@@ -95,7 +97,7 @@ Use these labels consistently across all screens and messages:
 
 #### Micro Touchpoints
 1. Header actions: `Import Excel`, `Add Unit`.
-2. Bulk actions: `Batch Letters`, `Delete`.
+2. Bulk actions: `Generate Maintenance Letters`, `Delete`.
 3. Row actions: `Generate Maintenance Letter`, `Record Payment`.
 4. Import modal Step 1: project mapping + options.
 5. Import modal Step 2: editable preview table + additional source columns.

@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Project, Unit, MaintenanceRate, MaintenanceSlab, Payment } from './types'
+import {
+  Project,
+  ProjectSectorPaymentConfig,
+  Unit,
+  MaintenanceRate,
+  MaintenanceSlab,
+  Payment
+} from './types'
 
 export * from './types'
 
@@ -12,6 +19,14 @@ const api = {
     create: (project: Project) => ipcRenderer.invoke('create-project', project),
     update: (id: number, project: Partial<Project>) =>
       ipcRenderer.invoke('update-project', id, project),
+    getSectorPaymentConfigs: (projectId: number) =>
+      ipcRenderer.invoke('get-project-sector-configs', projectId) as Promise<
+        ProjectSectorPaymentConfig[]
+      >,
+    saveSectorPaymentConfigs: (
+      projectId: number,
+      configs: Partial<ProjectSectorPaymentConfig>[]
+    ) => ipcRenderer.invoke('save-project-sector-configs', projectId, configs),
     delete: (id: number) => ipcRenderer.invoke('delete-project', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-projects', ids),
     getDashboardStats: (

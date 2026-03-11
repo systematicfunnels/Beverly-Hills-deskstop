@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS units (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
   unit_number TEXT NOT NULL,
+  sector_code TEXT, -- Sector/Block code (e.g. A, B, C, 1, 2)
   unit_type TEXT DEFAULT 'Bungalow', -- Plot, Bungalow
   area_sqft REAL NOT NULL,
   owner_name TEXT NOT NULL,
@@ -33,6 +34,23 @@ CREATE TABLE IF NOT EXISTS units (
   status TEXT DEFAULT 'Active', -- Active, Inactive
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_sector_payment_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  sector_code TEXT NOT NULL,
+  account_name TEXT,
+  bank_name TEXT,
+  account_no TEXT,
+  ifsc_code TEXT,
+  branch TEXT,
+  branch_address TEXT,
+  qr_code_path TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  UNIQUE(project_id, sector_code)
 );
 
 CREATE TABLE IF NOT EXISTS maintenance_rates (

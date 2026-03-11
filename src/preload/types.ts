@@ -22,6 +22,7 @@ export interface Unit {
   id?: number
   project_id: number
   unit_number: string
+  sector_code?: string
   owner_name: string
   area_sqft: number
   unit_type?: string
@@ -60,6 +61,21 @@ export interface MaintenanceRate {
   rate_per_sqft: number
   billing_frequency?: string
   project_name?: string
+}
+
+export interface ProjectSectorPaymentConfig {
+  id?: number
+  project_id: number
+  sector_code: string
+  account_name?: string
+  bank_name?: string
+  account_no?: string
+  ifsc_code?: string
+  branch?: string
+  branch_address?: string
+  qr_code_path?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface MaintenanceSlab {
