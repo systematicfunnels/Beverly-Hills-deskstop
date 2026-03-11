@@ -59,15 +59,17 @@ export const readExcelFile = async (file: File): Promise<Record<string, unknown>
 
       // Get headers from the first row
       const headers: { [key: number]: string } = {}
+      const headerUsageCount = new Map<string, number>()
       const headerRow = worksheet.getRow(1)
 
       headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const headerText = cell.text ? String(cell.text).trim() : ''
-        if (headerText) {
-          headers[colNumber] = headerText
-        } else {
-          headers[colNumber] = `Column${colNumber}`
-        }
+        const baseHeader = headerText || `Column${colNumber}`
+        const normalizedHeader = baseHeader.toLowerCase()
+        const seenCount = headerUsageCount.get(normalizedHeader) || 0
+
+        headers[colNumber] = seenCount === 0 ? baseHeader : `${baseHeader}_${seenCount}`
+        headerUsageCount.set(normalizedHeader, seenCount + 1)
       })
 
       // Iterate over data rows

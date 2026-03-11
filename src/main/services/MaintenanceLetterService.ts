@@ -44,6 +44,93 @@ class MaintenanceLetterService {
     return sanitized || 'UNKNOWN'
   }
 
+  private calculateAddOnsTotal(letterId: number): number {
+    return dbService.get<{ total: number }>(
+      'SELECT SUM(addon_amount) as total FROM add_ons WHERE letter_id = ?',
+      [letterId]
+    )?.total || 0
+  }
+
+  private syncMaintenanceLetterStatus(letterId: number): void {
+    dbService.run(
+      `UPDATE maintenance_letters
+       SET
+         status = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 'Paid'
+           ELSE 'Pending'
+         END,
+         is_paid = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 1
+           ELSE 0
+         END
+       WHERE id = ?`,
+      [letterId]
+    )
+  }
+
+  private syncAllMaintenanceLetterStatuses(): void {
+    dbService.run(
+      `UPDATE maintenance_letters
+       SET
+         status = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 'Paid'
+           ELSE 'Pending'
+         END,
+         is_paid = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 1
+           ELSE 0
+         END`
+    )
+  }
+
   private ensureColumnExists(
     tableName: string,
     columnName: string,
@@ -454,6 +541,11 @@ class MaintenanceLetterService {
                   SELECT SUM(payment_amount)
                   FROM payments
                   WHERE letter_id = maintenance_letters.id
+                     OR (
+                       letter_id IS NULL
+                       AND unit_id = maintenance_letters.unit_id
+                       AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                     )
                 ),
                 0
               ) + 0.01 >= excluded.final_amount THEN 'Paid'
@@ -465,6 +557,11 @@ class MaintenanceLetterService {
                   SELECT SUM(payment_amount)
                   FROM payments
                   WHERE letter_id = maintenance_letters.id
+                     OR (
+                       letter_id IS NULL
+                       AND unit_id = maintenance_letters.unit_id
+                       AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                     )
                 ),
                 0
               ) + 0.01 >= excluded.final_amount THEN 1
@@ -505,12 +602,15 @@ class MaintenanceLetterService {
             [letterId, addon.addon_name, addon.addon_amount]
           )
         }
+
+        this.syncMaintenanceLetterStatus(letterId)
       }
       return true
     })
   }
 
   public getAll(): MaintenanceLetter[] {
+    this.syncAllMaintenanceLetterStatuses()
     return dbService.query<MaintenanceLetter>(`
       SELECT l.*, u.unit_number, u.owner_name, u.unit_type, p.name as project_name,
              COALESCE((SELECT SUM(addon_amount) FROM add_ons WHERE letter_id = l.id), 0) as add_ons_total
@@ -522,6 +622,7 @@ class MaintenanceLetterService {
   }
 
   public getById(id: number): MaintenanceLetter | undefined {
+    this.syncMaintenanceLetterStatus(id)
     return dbService.get<MaintenanceLetter>(
       `
       SELECT l.*, u.unit_number, u.owner_name, p.name as project_name,
@@ -617,11 +718,7 @@ class MaintenanceLetterService {
       )
 
       // 3. Recalculate Letter Total
-      const addOnsTotal =
-        dbService.get<{ total: number }>(
-          'SELECT SUM(addon_amount) as total FROM add_ons WHERE letter_id = ?',
-          [letter.id]
-        )?.total || 0
+      const addOnsTotal = this.calculateAddOnsTotal(letter.id)
 
       const finalAmount = Math.max(
         0,
@@ -632,6 +729,7 @@ class MaintenanceLetterService {
         finalAmount,
         letter.id
       ])
+      this.syncMaintenanceLetterStatus(letter.id)
 
       return true
     })
@@ -662,11 +760,7 @@ class MaintenanceLetterService {
       ])
 
       if (letter) {
-        const addOnsTotal =
-          dbService.get<{ total: number }>(
-            'SELECT SUM(addon_amount) as total FROM add_ons WHERE letter_id = ?',
-            [addon.letter_id]
-          )?.total || 0
+        const addOnsTotal = this.calculateAddOnsTotal(addon.letter_id)
 
         const finalAmount = Math.max(
           0,
@@ -677,6 +771,7 @@ class MaintenanceLetterService {
           finalAmount,
           addon.letter_id
         ])
+        this.syncMaintenanceLetterStatus(addon.letter_id)
       }
 
       return true

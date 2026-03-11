@@ -302,17 +302,18 @@ const Payments: React.FC = () => {
         await Promise.all(paymentIds.map(id => window.api.payments.generateReceiptPdf(id)))
         message.success('Receipts generated successfully')
       } catch (error) {
-        console.error('Failed to generate receipts:', error)
-        message.error('Payments recorded but failed to generate some receipts')
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`[PAYMENTS] Failed to generate receipts for ${paymentIds.length} payments:`, errorMessage)
+        message.error(`Payments recorded but failed to generate some receipts: ${errorMessage}`)
       } finally {
         setGeneratingReceipts(false)
       }
       setIsBulkModalOpen(false)
       fetchData()
     } catch (error) {
-      console.error('Failed to record bulk payments:', error)
-      const messageText = error instanceof Error ? error.message : String(error)
-      message.error(`Failed to record bulk payments: ${messageText}`)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`[PAYMENTS] Failed to record bulk payments:`, errorMessage)
+      message.error(`Failed to record bulk payments: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
@@ -341,7 +342,8 @@ const Payments: React.FC = () => {
         await submitPayment(values, selectedUnit)
       }
     } catch (error) {
-      console.error('Failed to record payment:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`[PAYMENTS] Failed to record payment:`, errorMessage)
       message.error('Failed to record payment')
     }
   }
@@ -375,7 +377,8 @@ const Payments: React.FC = () => {
       setIsModalOpen(false)
       fetchData()
     } catch (error) {
-      console.error('Failed to record payment:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`[PAYMENTS] Failed to record payment:`, errorMessage)
       message.error('Failed to record payment')
     } finally {
       setLoading(false)
@@ -515,6 +518,17 @@ const Payments: React.FC = () => {
       render: (date: string) => dayjs(date).format('DD-MM-YYYY'),
       sorter: (a: Payment, b: Payment) =>
         dayjs(a.payment_date).unix() - dayjs(b.payment_date).unix()
+    },
+    {
+      title: 'Receipt #',
+      dataIndex: 'receipt_number',
+      key: 'receipt_number',
+      render: (receipt: string) => receipt || <Text type="secondary">Not generated</Text>,
+      sorter: (a: Payment, b: Payment) =>
+        (a.receipt_number || '').localeCompare(b.receipt_number || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
     },
     {
       title: 'Amount',

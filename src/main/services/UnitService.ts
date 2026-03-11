@@ -21,6 +21,47 @@ class UnitService {
     }
   }
 
+  private syncMaintenanceLetterStatus(letterId: number): void {
+    dbService.run(
+      `UPDATE maintenance_letters
+       SET
+         status = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 'Paid'
+           ELSE 'Pending'
+         END,
+         is_paid = CASE
+           WHEN COALESCE(
+             (
+               SELECT SUM(p.payment_amount)
+               FROM payments p
+               WHERE p.letter_id = maintenance_letters.id
+                  OR (
+                    p.letter_id IS NULL
+                    AND p.unit_id = maintenance_letters.unit_id
+                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                  )
+             ),
+             0
+           ) + 0.01 >= maintenance_letters.final_amount THEN 1
+           ELSE 0
+         END
+       WHERE id = ?`,
+      [letterId]
+    )
+  }
+
   public getAll(): Unit[] {
     return dbService.query<Unit>(`
       SELECT u.*, p.name as project_name 
@@ -158,6 +199,30 @@ class UnitService {
                 unitId
               ])
             }
+            if (row.contact_number !== undefined) {
+              dbService.run('UPDATE units SET contact_number = ? WHERE id = ?', [
+                String(row.contact_number || ''),
+                unitId
+              ])
+            }
+            if (row.email !== undefined) {
+              dbService.run('UPDATE units SET email = ? WHERE id = ?', [
+                String(row.email || ''),
+                unitId
+              ])
+            }
+            if (row.unit_type) {
+              dbService.run('UPDATE units SET unit_type = ? WHERE id = ?', [row.unit_type as string, unitId])
+            }
+            if (row.area_sqft !== undefined && Number(row.area_sqft) > 0) {
+              dbService.run('UPDATE units SET area_sqft = ? WHERE id = ?', [
+                Number(row.area_sqft),
+                unitId
+              ])
+            }
+            if (row.status) {
+              dbService.run('UPDATE units SET status = ? WHERE id = ?', [row.status as string, unitId])
+            }
           } else {
             unitId = this.create({
               project_id: projectId,
@@ -165,7 +230,9 @@ class UnitService {
               owner_name: (row.owner_name as string) || 'Unknown',
               unit_type: (row.unit_type as string) || 'Bungalow',
               area_sqft: Number(row.area_sqft) || 1000, // Default if missing
-              status: 'Active',
+              contact_number: (row.contact_number as string) || '',
+              email: (row.email as string) || '',
+              status: (row.status as string) || 'Active',
               penalty: Number(row.penalty) || 0
             })
           }
@@ -180,50 +247,110 @@ class UnitService {
                 add_ons?: { name: string; amount: number }[]
               }
 
-              if (Number(base_amount) <= 0 && (!add_ons || add_ons.length === 0) && !arrears)
-                continue
+              const normalizedFinancialYear = String(financial_year || '').trim()
+              const normalizedBaseAmount = Number(base_amount) || 0
+              const normalizedArrears = Number(arrears) || 0
 
-              // Create maintenance letter
-              const letterResult = dbService.run(
+              const normalizedAddOns = Array.isArray(add_ons)
+                ? add_ons
+                    .map((addon) => ({
+                      name: String(addon.name || 'Add-on').trim() || 'Add-on',
+                      amount: Number(addon.amount) || 0
+                    }))
+                    .filter((addon) => addon.amount > 0)
+                : []
+
+              const totalAddons = normalizedAddOns.reduce((sum, addon) => sum + addon.amount, 0)
+              if (
+                normalizedBaseAmount <= 0 &&
+                normalizedArrears === 0 &&
+                totalAddons === 0 &&
+                normalizedAddOns.length === 0
+              ) {
+                continue
+              }
+
+              if (!normalizedFinancialYear) {
+                continue
+              }
+
+              const finalAmount = normalizedBaseAmount + normalizedArrears + totalAddons
+
+              // Upsert one maintenance letter per unit + financial year.
+              dbService.run(
                 `INSERT INTO maintenance_letters (
                   project_id, unit_id, financial_year, base_amount, arrears, final_amount, status, is_paid, is_sent
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', 0, 0)
+                ON CONFLICT(unit_id, financial_year) DO UPDATE SET
+                  project_id = excluded.project_id,
+                  base_amount = excluded.base_amount,
+                  arrears = excluded.arrears,
+                  final_amount = excluded.final_amount,
+                  status = CASE
+                    WHEN COALESCE(
+                      (
+                        SELECT SUM(payment_amount)
+                        FROM payments
+                        WHERE letter_id = maintenance_letters.id
+                           OR (
+                             letter_id IS NULL
+                             AND unit_id = maintenance_letters.unit_id
+                             AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                           )
+                      ),
+                      0
+                    ) + 0.01 >= excluded.final_amount THEN 'Paid'
+                    ELSE 'Pending'
+                  END,
+                  is_paid = CASE
+                    WHEN COALESCE(
+                      (
+                        SELECT SUM(payment_amount)
+                        FROM payments
+                        WHERE letter_id = maintenance_letters.id
+                           OR (
+                             letter_id IS NULL
+                             AND unit_id = maintenance_letters.unit_id
+                             AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                           )
+                      ),
+                      0
+                    ) + 0.01 >= excluded.final_amount THEN 1
+                    ELSE 0
+                  END`,
                 [
                   projectId,
                   unitId,
-                  financial_year,
-                  base_amount,
-                  arrears || 0,
-                  Number(base_amount) + (arrears || 0), // Initial final_amount, will update with add-ons
-                  'Pending',
-                  0, // is_paid
-                  0 // is_sent
+                  normalizedFinancialYear,
+                  normalizedBaseAmount,
+                  normalizedArrears,
+                  finalAmount
                 ]
               )
-              const letterId = letterResult.lastInsertRowid as number
 
-              // C. Add-ons
-              let totalAddons = 0
-              if (add_ons && Array.isArray(add_ons)) {
-                for (const addon of add_ons) {
-                  const amount = Number(addon.amount)
-                  if (amount > 0) {
-                    dbService.run(
-                      'INSERT INTO add_ons (letter_id, addon_name, addon_amount) VALUES (?, ?, ?)',
-                      [letterId, addon.name, amount]
-                    )
-                    totalAddons += amount
-                  }
-                }
-              }
+              const letter = dbService.get<{ id: number }>(
+                'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+                [unitId, normalizedFinancialYear]
+              )
 
-              // Update final_amount with add-ons
-              if (totalAddons > 0) {
-                dbService.run(
-                  'UPDATE maintenance_letters SET final_amount = final_amount + ? WHERE id = ?',
-                  [totalAddons, letterId]
+              if (!letter) {
+                throw new Error(
+                  `Failed to persist maintenance letter for unit ${unitNumber} (${normalizedFinancialYear})`
                 )
               }
+              const letterId = letter.id
+
+              // C. Replace add-ons so repeated imports stay idempotent.
+              dbService.run('DELETE FROM add_ons WHERE letter_id = ?', [letterId])
+
+              for (const addon of normalizedAddOns) {
+                dbService.run(
+                  'INSERT INTO add_ons (letter_id, addon_name, addon_amount) VALUES (?, ?, ?)',
+                  [letterId, addon.name, addon.amount]
+                )
+              }
+
+              this.syncMaintenanceLetterStatus(letterId)
             }
           }
         } catch (error: unknown) {

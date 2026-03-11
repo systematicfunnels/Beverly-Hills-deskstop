@@ -134,7 +134,7 @@ const Units: React.FC = () => {
         }
       }
 
-      let unitNumber = String(
+      const explicitUnitNumber = String(
         getValue([
           'unit number',
           'unit',
@@ -145,16 +145,23 @@ const Units: React.FC = () => {
           'flat no',
           'flat_no',
           'flat number',
-          'plot',
-          'plot no',
-          'plot_no',
-          'plot number',
           'member code',
           'id',
           'shop',
           'office'
         ]) || ''
       ).trim()
+
+      const plotNumber = String(getValue(['plot', 'plot no', 'plot_no', 'plot number']) || '').trim()
+      const sectorNumber = String(
+        getValue(['sector', 'sector no', 'sector_no', 'sector number', 'block']) || ''
+      ).trim()
+
+      // For ledgers with repeated plot numbers across sectors, compose a stable unique unit number.
+      let unitNumber = explicitUnitNumber
+      if (!unitNumber && plotNumber) {
+        unitNumber = sectorNumber ? `${sectorNumber}-${plotNumber}` : plotNumber
+      }
 
       if (!unitNumber && ignoreEmptyUnits) return null
 
@@ -216,6 +223,11 @@ const Units: React.FC = () => {
         ).replace(/[^0-9.]/g, '')
       )
 
+      const contactNumber = String(
+        getValue(['contact', 'contact number', 'mobile', 'phone', 'phone number']) || ''
+      ).trim()
+      const emailAddress = String(getValue(['email', 'e-mail', 'mail']) || '').trim()
+
       return {
         ...row,
         previewId,
@@ -234,6 +246,8 @@ const Units: React.FC = () => {
         })(),
         area_sqft: rawArea || defaultArea,
         owner_name: ownerName || '',
+        contact_number: contactNumber,
+        email: emailAddress,
         status: String(getValue(['status', 'occupancy']) || 'Active').trim(),
         penalty: Number(getValue(['penalty', 'opening penalty', 'penalty amount']) || 0)
       }
@@ -401,6 +415,21 @@ const Units: React.FC = () => {
 
     setLoading(true)
     try {
+      const parseAmount = (value: unknown): number => {
+        if (typeof value === 'number') {
+          return Number.isFinite(value) ? value : 0
+        }
+
+        const cleaned = String(value ?? '')
+          .replace(/,/g, '')
+          .replace(/[^0-9.-]/g, '')
+          .trim()
+        if (!cleaned || cleaned === '-' || cleaned === '.') return 0
+
+        const parsed = Number(cleaned)
+        return Number.isFinite(parsed) ? parsed : 0
+      }
+
       const rowsToImport = mappedPreview.map((row) => {
         const years: {
           financial_year: string
@@ -409,30 +438,81 @@ const Units: React.FC = () => {
           add_ons: { name: string; amount: number }[]
         }[] = []
 
-        const yearKeys = Object.keys(row).filter((key) => /^\d{4}-\d{2}$/.test(key))
+        const rowKeys = Object.keys(row)
+        const normalizedKeyToOriginal = new Map<string, string>()
+        for (const key of rowKeys) {
+          normalizedKeyToOriginal.set(key.toLowerCase().trim(), key)
+        }
 
-        for (const year of yearKeys) {
-          const baseAmount = Number(row[year]) || 0
+        const getRowValue = (possibleKeys: string[]): unknown => {
+          for (const possibleKey of possibleKeys) {
+            const originalKey = normalizedKeyToOriginal.get(possibleKey.toLowerCase().trim())
+            if (!originalKey) continue
+
+            const value = row[originalKey]
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+              return value
+            }
+          }
+          return undefined
+        }
+
+        const yearKeys = rowKeys.filter((key) => /^\d{4}-\d{2}$/.test(key.trim()))
+
+        for (const [yearIndex, year] of yearKeys.entries()) {
+          const baseAmount = parseAmount(row[year])
           const addons: { name: string; amount: number }[] = []
-          let arrears = 0
 
-          const arrearsValue = row['Arrears'] || row['O/S'] || row['Balance'] || row['Outstanding']
-          if (arrearsValue !== undefined) {
-            arrears = Number(arrearsValue) || 0
+          const appendAddon = (name: string, amount: number): void => {
+            if (amount <= 0) return
+            const existingAddon = addons.find((addon) => addon.name === name)
+            if (existingAddon) {
+              existingAddon.amount += amount
+            } else {
+              addons.push({ name, amount })
+            }
           }
 
-          const possibleAddons = [
-            { key: 'NA Tax', name: 'NA Tax' },
-            { key: 'N.A Tax', name: 'NA Tax' },
-            { key: 'Cable', name: 'Cable' },
-            { key: 'Rd & NA', name: 'Road & NA Charges' },
-            { key: 'Water', name: 'Water Charges' },
-            { key: 'Interest', name: 'Interest' }
+          const arrearsValue = getRowValue(['arrears', 'o/s', 'balance', 'outstanding'])
+          const arrears = arrearsValue !== undefined ? parseAmount(arrearsValue) : 0
+
+          const legacyAddons = [
+            { keys: ['na tax', 'n.a tax'], name: 'NA Tax' },
+            { keys: ['cable'], name: 'Cable' },
+            { keys: ['rd & na'], name: 'Road & NA Charges' },
+            { keys: ['water'], name: 'Water Charges' },
+            { keys: ['interest'], name: 'Interest' }
           ]
 
-          for (const addon of possibleAddons) {
-            if (row[addon.key] !== undefined && Number(row[addon.key]) > 0) {
-              addons.push({ name: addon.name, amount: Number(row[addon.key]) })
+          for (const addon of legacyAddons) {
+            const addonValue = getRowValue(addon.keys)
+            if (addonValue !== undefined) {
+              appendAddon(addon.name, parseAmount(addonValue))
+            }
+          }
+
+          // Capture year-adjacent addon columns like GST / Pipe Replacement from ledger-style sheets.
+          const currentYearColIndex = rowKeys.indexOf(year)
+          const nextYearKey = yearKeys[yearIndex + 1]
+          const nextYearColIndex = nextYearKey ? rowKeys.indexOf(nextYearKey) : rowKeys.length
+
+          if (currentYearColIndex >= 0) {
+            const segmentEnd =
+              nextYearColIndex > currentYearColIndex ? nextYearColIndex : rowKeys.length
+            for (let columnIndex = currentYearColIndex + 1; columnIndex < segmentEnd; columnIndex++) {
+              const columnKey = rowKeys[columnIndex]
+              const normalizedColumnKey = columnKey.toLowerCase().trim()
+              const columnAmount = parseAmount(row[columnKey])
+              if (columnAmount <= 0) continue
+
+              if (/^gst(?:_\d+)?$/.test(normalizedColumnKey)) {
+                appendAddon('GST', columnAmount)
+                continue
+              }
+
+              if (/^pipe[\s_-]*replac(e)?ment$/.test(normalizedColumnKey)) {
+                appendAddon('Pipe Replacement', columnAmount)
+              }
             }
           }
 
@@ -449,6 +529,9 @@ const Units: React.FC = () => {
           owner_name: row.owner_name,
           unit_type: row.unit_type,
           area_sqft: row.area_sqft,
+          contact_number: row.contact_number,
+          email: row.email,
+          status: row.status,
           penalty: row.penalty,
           years: years
         }
@@ -486,6 +569,94 @@ const Units: React.FC = () => {
     )
   }
 
+  const previewExcelColumns = useMemo(() => {
+    if (importData.length === 0 || mappedPreview.length === 0) return []
+
+    const reservedKeys = new Set([
+      '__id',
+      'previewid',
+      'project_id',
+      'unit_number',
+      'owner_name',
+      'unit_type',
+      'area_sqft',
+      'status',
+      'contact_number',
+      'email',
+      'penalty',
+      'years'
+    ])
+
+    const orderedHeaders: string[] = []
+    const seenHeaders = new Set<string>()
+
+    for (const sourceRow of importData) {
+      for (const header of Object.keys(sourceRow)) {
+        const normalizedHeader = header.toLowerCase().trim()
+        if (reservedKeys.has(normalizedHeader) || seenHeaders.has(normalizedHeader)) continue
+
+        const hasValue = mappedPreview.some((previewRow) => {
+          const value = previewRow[header]
+          return value !== undefined && value !== null && String(value).trim() !== ''
+        })
+        if (!hasValue) continue
+
+        seenHeaders.add(normalizedHeader)
+        orderedHeaders.push(header)
+      }
+    }
+
+    const parseDisplayNumber = (value: unknown): number | undefined => {
+      const cleaned = String(value ?? '')
+        .replace(/,/g, '')
+        .replace(/[^0-9.-]/g, '')
+        .trim()
+      if (!cleaned || cleaned === '-' || cleaned === '.') return undefined
+      const parsed = Number(cleaned)
+      return Number.isFinite(parsed) ? parsed : undefined
+    }
+
+    return orderedHeaders.map((header) => {
+      const normalizedHeader = header.toLowerCase().trim()
+      const isLikelyNumeric =
+        /^\d{4}-\d{2}$/.test(header.trim()) ||
+        /^gst(?:_\d+)?$/.test(normalizedHeader) ||
+        /^pipe[\s_-]*replac(e)?ment$/.test(normalizedHeader) ||
+        /^total$/.test(normalizedHeader) ||
+        /^sq\.?ft$/.test(normalizedHeader) ||
+        /^sq\.?mts$/.test(normalizedHeader)
+
+      return {
+        title: header,
+        key: `excel_${header}`,
+        width: isLikelyNumeric ? 110 : 150,
+        render: (_: unknown, record: ImportUnitPreview) => {
+          const value = record[header]
+
+          if (isLikelyNumeric) {
+            return (
+              <InputNumber
+                size="small"
+                value={parseDisplayNumber(value)}
+                onChange={(val) => handlePreviewCellChange(record.previewId, header, val ?? 0)}
+                style={{ width: '100%', minWidth: '90px' }}
+              />
+            )
+          }
+
+          return (
+            <Input
+              size="small"
+              value={String(value ?? '')}
+              onChange={(e) => handlePreviewCellChange(record.previewId, header, e.target.value)}
+              style={{ width: '100%', minWidth: '120px' }}
+            />
+          )
+        }
+      }
+    })
+  }, [importData, mappedPreview])
+
   const columns = [
     {
       title: 'Project',
@@ -520,12 +691,22 @@ const Units: React.FC = () => {
       title: 'Contact',
       dataIndex: 'contact_number',
       key: 'contact_number',
+      sorter: (a: Unit, b: Unit) =>
+        (a.contact_number || '').localeCompare(b.contact_number || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        }),
       render: (text: string) => text || '-'
     },
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      sorter: (a: Unit, b: Unit) =>
+        (a.email || '').localeCompare(b.email || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        }),
       render: (text: string) => text || '-'
     },
     {
@@ -889,6 +1070,10 @@ const Units: React.FC = () => {
               <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                 Double-click on any cell to edit. Red borders indicate missing required fields.
               </Paragraph>
+              <Paragraph type="secondary" style={{ fontSize: '12px', marginTop: 0, marginBottom: 8 }}>
+                Rows loaded: {mappedPreview.length} | Additional Excel columns shown:{' '}
+                {previewExcelColumns.length}
+              </Paragraph>
 
               {/* Responsive table container */}
               <div
@@ -1031,6 +1216,15 @@ const Units: React.FC = () => {
                       dataIndex: 'contact_number',
                       key: 'contact_number',
                       width: 120,
+                      sorter: (a: ImportUnitPreview, b: ImportUnitPreview) =>
+                        String(a.contact_number || '').localeCompare(
+                          String(b.contact_number || ''),
+                          undefined,
+                          {
+                            numeric: true,
+                            sensitivity: 'base'
+                          }
+                        ),
                       render: (text: string, record: ImportUnitPreview) => (
                         <Input
                           size="small"
@@ -1044,8 +1238,28 @@ const Units: React.FC = () => {
                           }
                           style={{ width: '100%', minWidth: '100px' }}
                         />
-                      ),
-                      responsive: ['md']
+                      )
+                    },
+                    {
+                      title: 'Email',
+                      dataIndex: 'email',
+                      key: 'email',
+                      width: 180,
+                      sorter: (a: ImportUnitPreview, b: ImportUnitPreview) =>
+                        String(a.email || '').localeCompare(String(b.email || ''), undefined, {
+                          numeric: true,
+                          sensitivity: 'base'
+                        }),
+                      render: (text: string, record: ImportUnitPreview) => (
+                        <Input
+                          size="small"
+                          value={text}
+                          onChange={(e) =>
+                            handlePreviewCellChange(record.previewId, 'email', e.target.value)
+                          }
+                          style={{ width: '100%', minWidth: '140px' }}
+                        />
+                      )
                     },
                     {
                       title: 'Penalty',
@@ -1063,7 +1277,8 @@ const Units: React.FC = () => {
                         />
                       ),
                       responsive: ['md']
-                    }
+                    },
+                    ...previewExcelColumns
                   ]}
                   scroll={{ x: 'max-content' }}
                   style={{ minWidth: '600px' }}

@@ -32,16 +32,29 @@ export interface Receipt {
 
 class PaymentService {
   private updateLetterStatus(letterId: number): void {
-    const letter = dbService.get<{ id: number; final_amount: number }>(
-      'SELECT id, final_amount FROM maintenance_letters WHERE id = ?',
+    const letter = dbService.get<{
+      id: number
+      final_amount: number
+      unit_id: number
+      financial_year: string
+    }>(
+      'SELECT id, final_amount, unit_id, financial_year FROM maintenance_letters WHERE id = ?',
       [letterId]
     )
     if (!letter) return
 
     const paidAmount =
-      dbService.get<{ total: number }>('SELECT SUM(payment_amount) as total FROM payments WHERE letter_id = ?', [
-        letterId
-      ])?.total || 0
+      dbService.get<{ total: number }>(
+        `SELECT SUM(payment_amount) as total
+         FROM payments
+         WHERE letter_id = ?
+            OR (
+              letter_id IS NULL
+              AND unit_id = ?
+              AND TRIM(COALESCE(financial_year, '')) = TRIM(?)
+            )`,
+        [letterId, letter.unit_id, letter.financial_year]
+      )?.total || 0
 
     const isPaid = paidAmount + 0.01 >= letter.final_amount
     dbService.run('UPDATE maintenance_letters SET status = ?, is_paid = ? WHERE id = ?', [
@@ -54,7 +67,7 @@ class PaymentService {
   private updateLetterStatusByUnitYear(unitId: number, financialYear?: string): void {
     if (!financialYear) return
     const letter = dbService.get<{ id: number }>(
-      'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+      'SELECT id FROM maintenance_letters WHERE unit_id = ? AND TRIM(financial_year) = TRIM(?)',
       [unitId, financialYear]
     )
     if (!letter) return
@@ -313,7 +326,7 @@ class PaymentService {
 
       if (!resolvedLetterId && resolvedFinancialYear) {
         resolvedLetterId = dbService.get<{ id: number }>(
-          'SELECT id FROM maintenance_letters WHERE unit_id = ? AND financial_year = ?',
+          'SELECT id FROM maintenance_letters WHERE unit_id = ? AND TRIM(financial_year) = TRIM(?)',
           [payment.unit_id, resolvedFinancialYear]
         )?.id
       }

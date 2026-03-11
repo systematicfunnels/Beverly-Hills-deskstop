@@ -270,6 +270,11 @@ const Billing: React.FC = () => {
           }))
         })
         message.success('Maintenance letters generated successfully')
+        notification.info({
+          message: 'Next Step: Record Payments',
+          description:
+            'Letters are created with Pending status. Status changes to Paid only after recording payment in the Payments page.'
+        })
         setIsModalOpen(false)
         setBatchModalStep('config')
         fetchData()
@@ -621,6 +626,15 @@ const Billing: React.FC = () => {
       fixed: 'right' as const,
       render: (_: unknown, record: MaintenanceLetter) => (
         <Space size="middle">
+          <Button
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation()
+              navigate('/payments', { state: { unitId: record.unit_id } })
+            }}
+          >
+            Pay
+          </Button>
           <Button
             type="primary"
             icon={<FilePdfOutlined />}
