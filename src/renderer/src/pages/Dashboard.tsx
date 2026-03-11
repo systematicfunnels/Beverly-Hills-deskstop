@@ -479,7 +479,7 @@ const Dashboard: React.FC = () => {
                   onClick={() => navigate('/billing')}
                 >
                   <Title level={5} style={{ margin: '8px 0' }}>
-                    Generate Letters
+                    Generate Maintenance Letters
                   </Title>
                   <Text type="secondary">Process annual maintenance</Text>
                 </Card>

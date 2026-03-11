@@ -653,7 +653,7 @@ const Payments: React.FC = () => {
       >
         <div>
           <Title level={2} style={{ margin: 0 }}>
-            Payment Management
+            Payments & Receipts
           </Title>
           {filteredPaymentsCount > 0 && (
             <Text type="secondary" style={{ fontSize: '14px' }}>
@@ -687,7 +687,7 @@ const Payments: React.FC = () => {
             onClick={handleBulkAdd}
             aria-label="Open bulk payment entry"
           >
-            Bulk Record
+            Record Bulk Payments
           </Button>
           <Button
             type="primary"
@@ -873,7 +873,7 @@ const Payments: React.FC = () => {
 
       {/* Record Single Payment Modal */}
       <Modal
-        title="Record New Payment"
+        title="Record Payment"
         open={isModalOpen}
         onOk={handleModalOk}
         onCancel={() => setIsModalOpen(false)}
@@ -1079,7 +1079,7 @@ const Payments: React.FC = () => {
 
       {/* Bulk Payment Modal */}
       <Modal
-        title="Bulk Payment Entry"
+        title="Record Bulk Payments"
         open={isBulkModalOpen}
         onOk={handleBulkModalOk}
         onCancel={() => setIsBulkModalOpen(false)}

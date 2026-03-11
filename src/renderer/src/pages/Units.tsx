@@ -740,7 +740,7 @@ const Units: React.FC = () => {
       align: 'right' as const,
       render: (_: unknown, record: Unit) => (
         <Space>
-          <Tooltip title="Generate maintenance letter">
+          <Tooltip title="Generate Maintenance Letter">
             <Button
               size="small"
               icon={<FilePdfOutlined />}

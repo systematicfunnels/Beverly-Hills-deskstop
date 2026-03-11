@@ -49,7 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     {
       key: '/payments',
       icon: <IndianRupee size={16} />,
-      label: 'Payments & receipts'
+      label: 'Payments & Receipts'
     },
     {
       key: '/reports',

@@ -633,7 +633,7 @@ const Billing: React.FC = () => {
               navigate('/payments', { state: { unitId: record.unit_id } })
             }}
           >
-            Pay
+            Record Payment
           </Button>
           <Button
             type="primary"
@@ -699,7 +699,7 @@ const Billing: React.FC = () => {
               </>
             )}
             <Button type="primary" icon={<PlusOutlined />} onClick={handleBatchGenerate}>
-              Generate Batch
+              Generate Maintenance Letters
             </Button>
           </Space>
         </div>
@@ -963,7 +963,7 @@ const Billing: React.FC = () => {
       />
 
       <Modal
-        title="Generate Batch Maintenance Letters"
+        title="Generate Maintenance Letters"
         open={isModalOpen}
         onOk={handleModalOk}
         onCancel={() => {
@@ -972,7 +972,7 @@ const Billing: React.FC = () => {
         }}
         width={700}
         confirmLoading={loading}
-        okText={batchModalStep === 'config' ? 'Next: Select Units' : 'Generate Letters'}
+        okText={batchModalStep === 'config' ? 'Next: Select Units' : 'Generate Maintenance Letters'}
       >
         {passedUnitIds.length > 0 && (
           <Alert
