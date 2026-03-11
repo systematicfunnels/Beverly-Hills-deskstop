@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import {
   Project,
+  ProjectSetupSummary,
   ProjectSectorPaymentConfig,
   Unit,
   MaintenanceLetter,
@@ -21,6 +22,8 @@ declare global {
       projects: {
         getAll: () => Promise<Project[]>
         getById: (id: number) => Promise<Project | undefined>
+        getSetupSummary: (projectId: number, financialYear?: string) => Promise<ProjectSetupSummary>
+        getSetupSummaries: (financialYear?: string) => Promise<ProjectSetupSummary[]>
         create: (project: Project) => Promise<number>
         update: (id: number, project: Partial<Project>) => Promise<boolean>
         getSectorPaymentConfigs: (projectId: number) => Promise<ProjectSectorPaymentConfig[]>
@@ -109,6 +112,12 @@ declare global {
       }
       shell: {
         showItemInFolder: (path: string) => void
+      }
+      dialog: {
+        selectFile: (options: {
+          title?: string
+          filters?: { name: string; extensions: string[] }[]
+        }) => Promise<string | null>
       }
       database: {
         repair: () => Promise<RepairResult>

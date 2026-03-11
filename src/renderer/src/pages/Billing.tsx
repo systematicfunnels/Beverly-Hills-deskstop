@@ -38,7 +38,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 
-import { MaintenanceLetter, Project, LetterAddOn, Unit } from '@preload/types'
+import { MaintenanceLetter, Project, LetterAddOn, Unit, ProjectSetupSummary } from '@preload/types'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -90,6 +90,9 @@ const Billing: React.FC = () => {
   const [unitsLoading, setUnitsLoading] = useState(false)
   const [unitSearchText, setUnitSearchText] = useState('')
   const batchProjectId = Form.useWatch('project_id', form)
+  const batchFinancialYear = Form.useWatch('financial_year', form)
+  const [projectSetupSummary, setProjectSetupSummary] = useState<ProjectSetupSummary | null>(null)
+  const [setupSummaryLoading, setSetupSummaryLoading] = useState(false)
 
   const fetchData = async (): Promise<void> => {
     setLoading(true)
@@ -130,6 +133,7 @@ const Billing: React.FC = () => {
       setProjectUnits([])
       setUnitsLoading(false)
       setUnitSearchText('')
+      setProjectSetupSummary(null)
       return
     }
     if (!batchProjectId) {
@@ -146,6 +150,38 @@ const Billing: React.FC = () => {
       })
       .finally(() => setUnitsLoading(false))
   }, [batchProjectId, isModalOpen])
+
+  useEffect(() => {
+    if (!isModalOpen || !batchProjectId || !batchFinancialYear) {
+      setProjectSetupSummary(null)
+      return
+    }
+
+    let isCancelled = false
+    setSetupSummaryLoading(true)
+    window.api.projects
+      .getSetupSummary(batchProjectId, batchFinancialYear)
+      .then((summary) => {
+        if (!isCancelled) {
+          setProjectSetupSummary(summary)
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          console.error('Failed to load project setup summary:', error)
+          setProjectSetupSummary(null)
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setSetupSummaryLoading(false)
+        }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [batchFinancialYear, batchProjectId, isModalOpen])
 
   useEffect(() => {
     if (!isModalOpen) return
@@ -217,8 +253,67 @@ const Billing: React.FC = () => {
     setSelectedUnitIds([])
     setBatchModalStep('config')
     form.resetFields()
+    setProjectSetupSummary(null)
     setIsModalOpen(true)
   }
+
+  const showProjectSetupBlockingModal = useCallback(
+    (summary: ProjectSetupSummary, projectId: number): void => {
+      const hasNonRateBlockers = summary.blockers.some(
+        (blocker) => !blocker.toLowerCase().includes('rate')
+      )
+      const navigationState = hasNonRateBlockers
+        ? { openEditProjectId: projectId }
+        : { openRatesProjectId: projectId }
+
+      Modal.confirm({
+        title: 'Project setup incomplete',
+        content: (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              Fix the following before generating maintenance letters:
+            </div>
+            <ul style={{ paddingLeft: 20, marginBottom: summary.warnings.length > 0 ? 12 : 0 }}>
+              {summary.blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+            {summary.warnings.length > 0 && (
+              <>
+                <div style={{ marginBottom: 8 }}>Warnings:</div>
+                <ul style={{ paddingLeft: 20 }}>
+                  {summary.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        ),
+        okText: hasNonRateBlockers ? 'Open Project Setup' : 'Open Rates',
+        cancelText: 'Close',
+        onOk: () => {
+          setIsModalOpen(false)
+          setBatchModalStep('config')
+          navigate('/projects', { state: navigationState })
+        }
+      })
+    },
+    [navigate]
+  )
+
+  const ensureProjectReadyForLetters = useCallback(
+    async (projectId: number, financialYear: string): Promise<boolean> => {
+      const summary = await window.api.projects.getSetupSummary(projectId, financialYear)
+      setProjectSetupSummary(summary)
+      if (!summary.ready_for_letters) {
+        showProjectSetupBlockingModal(summary, projectId)
+        return false
+      }
+      return true
+    },
+    [showProjectSetupBlockingModal]
+  )
 
   const handleShowAddOns = async (record: MaintenanceLetter): Promise<void> => {
     if (!record.id) return
@@ -241,7 +336,10 @@ const Billing: React.FC = () => {
       try {
         await form.validateFields(['project_id', 'financial_year', 'letter_date', 'due_date'])
         const projectId = form.getFieldValue('project_id')
-        if (projectId) {
+        const financialYear = form.getFieldValue('financial_year')
+        if (projectId && financialYear) {
+          const isReady = await ensureProjectReadyForLetters(projectId, financialYear)
+          if (!isReady) return
           // Move to unit selection step
           setBatchModalStep('units')
         }
@@ -258,6 +356,8 @@ const Billing: React.FC = () => {
         const dueDate = due_date.format('YYYY-MM-DD')
 
         setLoading(true)
+        const isReady = await ensureProjectReadyForLetters(project_id, financial_year)
+        if (!isReady) return
         await window.api.letters.createBatch({
           projectId: project_id,
           unitIds: selectedUnitIds.length > 0 ? selectedUnitIds : undefined,
@@ -285,9 +385,18 @@ const Billing: React.FC = () => {
           ? messageText.split('Error:')[1].trim()
           : messageText || 'Failed to generate maintenance letters'
 
-        if (
-          errorMessage.includes('No maintenance rate found for this Project and Financial Year')
-        ) {
+        if (errorMessage.includes('Project setup incomplete')) {
+          const projectId = form.getFieldValue('project_id') as number | undefined
+          const financialYear = form.getFieldValue('financial_year') as string | undefined
+          if (projectId && financialYear) {
+            const summary = await window.api.projects.getSetupSummary(projectId, financialYear)
+            setProjectSetupSummary(summary)
+            showProjectSetupBlockingModal(summary, projectId)
+            return
+          }
+        }
+
+        if (errorMessage.includes('No maintenance rate found for this Project and Financial Year')) {
           const projectId = form.getFieldValue('project_id') as number | undefined
           Modal.confirm({
             title: 'Maintenance rate missing',
@@ -969,6 +1078,7 @@ const Billing: React.FC = () => {
         onCancel={() => {
           setIsModalOpen(false)
           setBatchModalStep('config')
+          setProjectSetupSummary(null)
         }}
         width={700}
         confirmLoading={loading}
@@ -1035,6 +1145,60 @@ const Billing: React.FC = () => {
                     ))}
                   </Select>
                 </Form.Item>
+
+                {batchProjectId && batchFinancialYear && (
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <Alert
+                      type={
+                        projectSetupSummary
+                          ? projectSetupSummary.ready_for_letters
+                            ? projectSetupSummary.warnings.length > 0
+                              ? 'warning'
+                              : 'success'
+                            : 'error'
+                          : 'info'
+                      }
+                      showIcon
+                      message={
+                        setupSummaryLoading
+                          ? 'Checking project setup...'
+                          : projectSetupSummary
+                            ? projectSetupSummary.ready_for_letters
+                              ? projectSetupSummary.warnings.length > 0
+                                ? 'Project setup is usable, but there are warnings.'
+                                : 'Project setup is ready for maintenance letters.'
+                              : 'Project setup is incomplete.'
+                            : 'Select project and financial year to validate setup.'
+                      }
+                      description={
+                        projectSetupSummary ? (
+                          <div>
+                            <div>
+                              Units: {projectSetupSummary.unit_count} | Sectors:{' '}
+                              {projectSetupSummary.sector_codes.length > 0
+                                ? projectSetupSummary.sector_codes.join(', ')
+                                : 'None'}{' '}
+                              | Rate years:{' '}
+                              {projectSetupSummary.rate_years.length > 0
+                                ? projectSetupSummary.rate_years.join(', ')
+                                : 'None'}
+                            </div>
+                            {projectSetupSummary.blockers.map((blocker) => (
+                              <div key={blocker} style={{ color: '#cf1322', marginTop: 4 }}>
+                                {blocker}
+                              </div>
+                            ))}
+                            {projectSetupSummary.warnings.map((warning) => (
+                              <div key={warning} style={{ color: '#d48806', marginTop: 4 }}>
+                                {warning}
+                              </div>
+                            ))}
+                          </div>
+                        ) : undefined
+                      }
+                    />
+                  </div>
+                )}
 
                 <Form.Item
                   name="letter_date"

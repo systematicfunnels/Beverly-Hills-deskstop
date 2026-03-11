@@ -3,6 +3,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { projectService } from './ProjectService'
 
 export interface MaintenanceLetter {
   id?: number
@@ -22,9 +23,13 @@ export interface MaintenanceLetter {
   unit_number?: string
   owner_name?: string
   project_name?: string
+  letterhead_path?: string
+  account_name?: string
   bank_name?: string
   account_no?: string
   ifsc_code?: string
+  branch?: string
+  branch_address?: string
   qr_code_path?: string
   sector_code?: string
   add_ons_total?: number
@@ -192,10 +197,14 @@ class MaintenanceLetterService {
         u.unit_number,
         u.owner_name,
         p.name as project_name,
+        p.letterhead_path,
         ${sectorExpr} as sector_code,
+        COALESCE(psc.account_name, p.account_name) as account_name,
         COALESCE(psc.bank_name, p.bank_name) as bank_name,
         COALESCE(psc.account_no, p.account_no) as account_no,
         COALESCE(psc.ifsc_code, p.ifsc_code) as ifsc_code,
+        COALESCE(psc.branch, p.branch) as branch,
+        COALESCE(psc.branch_address, p.branch_address) as branch_address,
         COALESCE(psc.qr_code_path, p.qr_code_path) as qr_code_path
       FROM maintenance_letters l
       JOIN units u ON l.unit_id = u.id
@@ -218,14 +227,44 @@ class MaintenanceLetterService {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-    // Header with "Letterhead" feel
-    page.drawRectangle({
-      x: 0,
-      y: height - 100,
-      width: width,
-      height: 100,
-      color: rgb(0.17, 0.48, 0.37) // Brand color #2D7A5E
-    })
+    const letterheadPath = letter.letterhead_path ? path.resolve(letter.letterhead_path) : ''
+    const letterheadExt = path.extname(letterheadPath).toLowerCase()
+    const hasSupportedLetterhead =
+      (letterheadExt === '.png' || letterheadExt === '.jpg' || letterheadExt === '.jpeg') &&
+      fs.existsSync(letterheadPath)
+
+    if (hasSupportedLetterhead) {
+      try {
+        const letterheadBytes = fs.readFileSync(letterheadPath)
+        const letterheadImage =
+          letterheadExt === '.png'
+            ? await pdfDoc.embedPng(letterheadBytes)
+            : await pdfDoc.embedJpg(letterheadBytes)
+        page.drawImage(letterheadImage, {
+          x: 0,
+          y: height - 100,
+          width,
+          height: 100
+        })
+      } catch (error) {
+        console.error('Error embedding letterhead image:', error)
+        page.drawRectangle({
+          x: 0,
+          y: height - 100,
+          width: width,
+          height: 100,
+          color: rgb(0.17, 0.48, 0.37)
+        })
+      }
+    } else {
+      page.drawRectangle({
+        x: 0,
+        y: height - 100,
+        width: width,
+        height: 100,
+        color: rgb(0.17, 0.48, 0.37)
+      })
+    }
 
     page.drawText(letter.project_name?.toUpperCase() || 'MAINTENANCE LETTER', {
       x: 50,
@@ -334,14 +373,26 @@ class MaintenanceLetterService {
     // Bank Details
     currentY -= 60
     page.drawText('Bank Details for Payment:', { x: 50, y: currentY, size: 10, font: boldFont })
-    page.drawText(`Bank: ${letter.bank_name || 'N/A'}`, { x: 50, y: currentY - 15, size: 10, font })
+    page.drawText(`Name: ${letter.account_name || 'N/A'}`, { x: 50, y: currentY - 15, size: 10, font })
+    page.drawText(`Bank: ${letter.bank_name || 'N/A'}`, { x: 50, y: currentY - 30, size: 10, font })
     page.drawText(`A/C No: ${letter.account_no || 'N/A'}`, {
       x: 50,
-      y: currentY - 30,
+      y: currentY - 45,
       size: 10,
       font
     })
-    page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 45, size: 10, font })
+    page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 60, size: 10, font })
+    if (letter.branch) {
+      page.drawText(`Branch: ${letter.branch}`, { x: 50, y: currentY - 75, size: 10, font })
+    }
+    if (letter.branch_address) {
+      page.drawText(`Address: ${letter.branch_address}`, {
+        x: 50,
+        y: currentY - 90,
+        size: 10,
+        font
+      })
+    }
 
     // Add project-configured QR image if available
     const qrPath = letter.qr_code_path ? path.resolve(letter.qr_code_path) : ''
@@ -355,13 +406,13 @@ class MaintenanceLetterService {
         // Draw image (100x100) to the right of bank details
         page.drawImage(qrImage, {
           x: 400,
-          y: currentY - 80,
+          y: currentY - 100,
           width: 100,
           height: 100
         })
         page.drawText('Scan to Pay', {
           x: 420,
-          y: currentY - 95,
+          y: currentY - 115,
           size: 10,
           font: boldFont
         })
@@ -391,6 +442,11 @@ class MaintenanceLetterService {
     unitIds: number[] = [],
     addOns: { addon_name: string; addon_amount: number }[] = []
   ): boolean {
+    const setupSummary = projectService.getSetupSummary(projectId, financialYear)
+    if (!setupSummary.ready_for_letters) {
+      throw new Error(`Project setup incomplete: ${setupSummary.blockers.join(' ')}`)
+    }
+
     const hasUnitsUnitType = this.ensureUnitsUnitTypeColumn()
     const hasRatesUnitType = this.ensureMaintenanceRatesUnitTypeColumn()
     const unitTypeExpr = hasUnitsUnitType

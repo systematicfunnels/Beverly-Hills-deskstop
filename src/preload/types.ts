@@ -14,8 +14,31 @@ export interface Project {
   branch?: string
   branch_address?: string
   qr_code_path?: string
+  template_type?: string
+  import_profile_key?: string
   unit_count?: number
   created_at?: string
+}
+
+export interface ProjectSetupSummary {
+  project_id: number
+  project_name: string
+  template_type?: string
+  import_profile_key?: string
+  unit_count: number
+  sector_codes: string[]
+  configured_sector_codes: string[]
+  sectors_missing_core_payment_config: string[]
+  sectors_without_qr_coverage: string[]
+  unit_types: string[]
+  rate_years: string[]
+  has_default_payment_details: boolean
+  has_default_qr: boolean
+  has_rate_for_financial_year: boolean
+  missing_rate_unit_types: string[]
+  blockers: string[]
+  warnings: string[]
+  ready_for_letters: boolean
 }
 
 export interface Unit {

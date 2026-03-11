@@ -15,7 +15,8 @@ import {
   Tooltip,
   Typography,
   Tabs,
-  List
+  List,
+  Alert
 } from 'antd'
 import {
   PlusOutlined,
@@ -23,9 +24,12 @@ import {
   DeleteOutlined,
   UploadOutlined,
   SearchOutlined,
-  BankOutlined
+  BankOutlined,
+  FolderOpenOutlined,
+  CheckCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons'
-import { Project, ProjectSectorPaymentConfig } from '@preload/types'
+import { Project, ProjectSectorPaymentConfig, ProjectSetupSummary } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
 
@@ -39,8 +43,61 @@ const getDefaultSectorConfigs = (): Partial<ProjectSectorPaymentConfig>[] => [
   { sector_code: 'C' }
 ]
 
+const DEFAULT_PROJECT_FORM_VALUES: Partial<Project> = {
+  status: 'Active',
+  city: 'Ahmedabad',
+  template_type: 'standard',
+  import_profile_key: 'standard_normalized'
+}
+
+const TEMPLATE_OPTIONS = [
+  {
+    value: 'standard',
+    label: 'Standard Letter',
+    description: 'Default platform maintenance letter flow.'
+  },
+  {
+    value: 'sector_legacy',
+    label: 'Sector Legacy',
+    description: 'For sector-driven legacy projects with bank routing by sector.'
+  },
+  {
+    value: 'reminder_legacy',
+    label: 'Reminder Legacy',
+    description: 'For reminder-style historical ledgers and follow-up letters.'
+  }
+]
+
+const IMPORT_PROFILE_OPTIONS = [
+  {
+    value: 'standard_normalized',
+    label: 'Standard Platform Sheet',
+    description: 'Normalized workbook for future platform-led operations.'
+  },
+  {
+    value: 'beverly_abc_v1',
+    label: 'Beverly A/B/C Legacy',
+    description: 'Wide-format workbook with A/B/C plot blocks and year columns.'
+  },
+  {
+    value: 'banjara_numeric_v1',
+    label: 'Banjara Sector Ledger',
+    description: 'Sector + plot workbook with GST and pipe replacement columns.'
+  }
+]
+
+const TEMPLATE_LABELS = Object.fromEntries(TEMPLATE_OPTIONS.map((option) => [option.value, option.label]))
+const IMPORT_PROFILE_LABELS = Object.fromEntries(
+  IMPORT_PROFILE_OPTIONS.map((option) => [option.value, option.label])
+)
+
 const Projects: React.FC = () => {
+  const currentYear = new Date().getMonth() < 3 ? new Date().getFullYear() - 1 : new Date().getFullYear()
+  const currentFY = `${currentYear}-${String(currentYear + 1).slice(2)}`
   const [projects, setProjects] = useState<Project[]>([])
+  const [projectSetupSummaries, setProjectSetupSummaries] = useState<Record<number, ProjectSetupSummary>>(
+    {}
+  )
   const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isRateModalOpen, setIsRateModalOpen] = useState(false)
@@ -66,8 +123,14 @@ const Projects: React.FC = () => {
   const fetchProjects = async (): Promise<void> => {
     setLoading(true)
     try {
-      const data = await window.api.projects.getAll()
+      const [data, summaries] = await Promise.all([
+        window.api.projects.getAll(),
+        window.api.projects.getSetupSummaries(currentFY)
+      ])
       setProjects(data)
+      setProjectSetupSummaries(
+        Object.fromEntries(summaries.map((summary) => [summary.project_id, summary]))
+      )
     } catch (error) {
       message.error('Failed to fetch projects')
       console.error(error)
@@ -81,7 +144,17 @@ const Projects: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    const state = location.state as { openRatesProjectId?: number } | null
+    const state = location.state as { openRatesProjectId?: number; openEditProjectId?: number } | null
+    const targetEditProjectId = state?.openEditProjectId
+    if (targetEditProjectId) {
+      const projectToEdit = projects.find((x) => x.id === targetEditProjectId)
+      if (projectToEdit) {
+        void handleEdit(projectToEdit)
+        window.history.replaceState({}, document.title)
+      }
+      return
+    }
+
     const targetProjectId = state?.openRatesProjectId
     if (!targetProjectId) return
 
@@ -130,11 +203,62 @@ const Projects: React.FC = () => {
     return projects.filter((p) => selectedRowKeys.includes(p.id!))
   }, [projects, selectedRowKeys])
 
+  const editingProjectSummary = useMemo(() => {
+    if (!editingProject?.id) return null
+    return projectSetupSummaries[editingProject.id] || null
+  }, [editingProject, projectSetupSummaries])
+
   const handleAdd = (): void => {
     setEditingProject(null)
     form.resetFields()
+    form.setFieldsValue(DEFAULT_PROJECT_FORM_VALUES)
     setSectorConfigs(getDefaultSectorConfigs())
     setIsModalOpen(true)
+  }
+
+  const pickProjectFile = async (
+    field: 'letterhead_path' | 'qr_code_path',
+    title: string
+  ): Promise<void> => {
+    try {
+      const selectedPath = await window.api.dialog.selectFile({
+        title,
+        filters: [
+          {
+            name: 'Image Files',
+            extensions: ['png', 'jpg', 'jpeg']
+          }
+        ]
+      })
+
+      if (selectedPath) {
+        form.setFieldsValue({ [field]: selectedPath })
+      }
+    } catch (error) {
+      console.error('Failed to pick file:', error)
+      message.error('Failed to open file picker')
+    }
+  }
+
+  const pickSectorQrFile = async (index: number): Promise<void> => {
+    try {
+      const selectedPath = await window.api.dialog.selectFile({
+        title: 'Select Sector QR / Barcode Image',
+        filters: [
+          {
+            name: 'Image Files',
+            extensions: ['png', 'jpg', 'jpeg']
+          }
+        ]
+      })
+
+      if (selectedPath) {
+        handleSectorConfigChange(index, 'qr_code_path', selectedPath)
+      }
+    } catch (error) {
+      console.error('Failed to pick sector QR file:', error)
+      message.error('Failed to open file picker')
+    }
   }
 
   const handleSectorConfigChange = (
@@ -314,9 +438,12 @@ const Projects: React.FC = () => {
   const handleEdit = async (record: Project): Promise<void> => {
     setEditingProject(record)
     form.setFieldsValue({
+      ...DEFAULT_PROJECT_FORM_VALUES,
       ...record,
       status: record.status || 'Active',
-      city: record.city || 'Ahmedabad'
+      city: record.city || 'Ahmedabad',
+      template_type: record.template_type || 'standard',
+      import_profile_key: record.import_profile_key || 'standard_normalized'
     })
     try {
       const configs = await window.api.projects.getSectorPaymentConfigs(record.id!)
@@ -390,6 +517,27 @@ const Projects: React.FC = () => {
   const handleModalOk = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
+      const normalizedValues: Partial<Project> = {
+        name: String(values.name || '').trim(),
+        address: String(values.address || '').trim(),
+        city: String(values.city || '').trim(),
+        state: String(values.state || '').trim(),
+        pincode: String(values.pincode || '').trim(),
+        status: String(values.status || 'Active').trim(),
+        account_name: String(values.account_name || '').trim(),
+        bank_name: String(values.bank_name || '').trim(),
+        account_no: String(values.account_no || '').trim(),
+        ifsc_code: String(values.ifsc_code || '')
+          .trim()
+          .toUpperCase(),
+        branch: String(values.branch || '').trim(),
+        branch_address: String(values.branch_address || '').trim(),
+        qr_code_path: String(values.qr_code_path || '').trim(),
+        letterhead_path: String(values.letterhead_path || '').trim(),
+        template_type: String(values.template_type || 'standard').trim(),
+        import_profile_key: String(values.import_profile_key || 'standard_normalized').trim()
+      }
+
       const preparedSectorConfigs = sectorConfigs
         .map((config) => ({
           sector_code: String(config.sector_code || '').trim().toUpperCase(),
@@ -429,11 +577,11 @@ const Projects: React.FC = () => {
 
       let projectId: number
       if (editingProject?.id) {
-        await window.api.projects.update(editingProject.id, values)
+        await window.api.projects.update(editingProject.id, normalizedValues)
         projectId = editingProject.id
         message.success('Project updated successfully')
       } else {
-        projectId = await window.api.projects.create(values)
+        projectId = await window.api.projects.create(normalizedValues as Project)
         message.success('Project created successfully')
       }
 
@@ -445,7 +593,6 @@ const Projects: React.FC = () => {
     }
   }
 
-  
   const columns = [
     {
       title: 'ID',
@@ -460,26 +607,61 @@ const Projects: React.FC = () => {
       key: 'name'
     },
     {
-      title: 'Address',
-      dataIndex: 'address',
-      key: 'address',
-      ellipsis: true
-    },
-    {
       title: 'City',
       dataIndex: 'city',
-      key: 'city'
+      key: 'city',
+      width: 140
     },
     {
-      title: 'State',
-      dataIndex: 'state',
-      key: 'state'
+      title: 'Workflow',
+      key: 'workflow',
+      width: 220,
+      render: (_: unknown, record: Project) => (
+        <Space direction="vertical" size={4}>
+          <Tag color="blue">{TEMPLATE_LABELS[record.template_type || 'standard'] || 'Standard Letter'}</Tag>
+          <Tag>{IMPORT_PROFILE_LABELS[record.import_profile_key || 'standard_normalized'] || 'Standard Platform Sheet'}</Tag>
+        </Space>
+      )
     },
     {
-      title: 'Pincode',
-      dataIndex: 'pincode',
-      key: 'pincode',
-      width: 100
+      title: `Setup (${currentFY})`,
+      key: 'setup_status',
+      width: 320,
+      render: (_: unknown, record: Project) => {
+        const summary = record.id ? projectSetupSummaries[record.id] : undefined
+        if (!summary) {
+          return <Text type="secondary">Checking setup...</Text>
+        }
+
+        const statusColor = summary.ready_for_letters
+          ? summary.warnings.length > 0
+            ? 'warning'
+            : 'success'
+          : 'error'
+        const statusLabel = summary.ready_for_letters
+          ? summary.warnings.length > 0
+            ? 'Ready with Warnings'
+            : 'Ready'
+          : 'Needs Setup'
+
+        return (
+          <Space direction="vertical" size={4}>
+            <Tag color={statusColor}>{statusLabel}</Tag>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Units: {summary.unit_count} | Sectors:{' '}
+              {summary.sector_codes.length > 0 ? summary.sector_codes.join(', ') : 'None'}
+            </Text>
+            {summary.blockers[0] && (
+              <Text type="danger" style={{ fontSize: 12 }}>
+                {summary.blockers[0]}
+              </Text>
+            )}
+            {!summary.blockers[0] && summary.warnings[0] && (
+              <Text style={{ fontSize: 12, color: '#d48806' }}>{summary.warnings[0]}</Text>
+            )}
+          </Space>
+        )
+      }
     },
     {
       title: 'Status',
@@ -640,7 +822,58 @@ const Projects: React.FC = () => {
         onCancel={() => setIsModalOpen(false)}
         width={700}
       >
-        <Form form={form} layout="vertical" initialValues={{ status: 'Active', city: 'Ahmedabad' }}>
+        <Form form={form} layout="vertical" initialValues={DEFAULT_PROJECT_FORM_VALUES}>
+          {editingProjectSummary && (
+            <Alert
+              type={
+                editingProjectSummary.ready_for_letters
+                  ? editingProjectSummary.warnings.length > 0
+                    ? 'warning'
+                    : 'success'
+                  : 'error'
+              }
+              showIcon
+              icon={
+                editingProjectSummary.ready_for_letters ? (
+                  <CheckCircleOutlined />
+                ) : (
+                  <WarningOutlined />
+                )
+              }
+              message={
+                editingProjectSummary.ready_for_letters
+                  ? editingProjectSummary.warnings.length > 0
+                    ? 'Project setup is usable but still has warnings.'
+                    : 'Project setup is ready for maintenance letters.'
+                  : 'Project setup is incomplete.'
+              }
+              description={
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    Detected sectors:{' '}
+                    {editingProjectSummary.sector_codes.length > 0
+                      ? editingProjectSummary.sector_codes.join(', ')
+                      : 'None'}
+                    {' | '}Unit types:{' '}
+                    {editingProjectSummary.unit_types.length > 0
+                      ? editingProjectSummary.unit_types.join(', ')
+                      : 'None'}
+                  </div>
+                  {editingProjectSummary.blockers.map((blocker) => (
+                    <div key={blocker} style={{ color: '#cf1322' }}>
+                      {blocker}
+                    </div>
+                  ))}
+                  {editingProjectSummary.warnings.map((warning) => (
+                    <div key={warning} style={{ color: '#d48806' }}>
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Tabs defaultActiveKey="basic">
             <TabPane tab="Basic Information" key="basic">
               <div
@@ -682,6 +915,33 @@ const Projects: React.FC = () => {
                     <Option value="Inactive">Inactive</Option>
                   </Select>
                 </Form.Item>
+
+                <Form.Item
+                  name="template_type"
+                  label="Workflow Template"
+                  rules={[{ required: true, message: 'Please select workflow template' }]}
+                >
+                  <Select
+                    options={TEMPLATE_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label
+                    }))}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  name="import_profile_key"
+                  label="Import Profile"
+                  rules={[{ required: true, message: 'Please select import profile' }]}
+                  style={{ gridColumn: 'span 2' }}
+                >
+                  <Select
+                    options={IMPORT_PROFILE_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: `${option.label} - ${option.description}`
+                    }))}
+                  />
+                </Form.Item>
               </div>
             </TabPane>
 
@@ -721,6 +981,30 @@ const Projects: React.FC = () => {
                 >
                   <Input />
                 </Form.Item>
+
+                <Form.Item name="qr_code_path" label="Default QR / Barcode" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Input placeholder="Default QR image path (.png/.jpg/.jpeg)" />
+                    <Button
+                      icon={<FolderOpenOutlined />}
+                      onClick={() => void pickProjectFile('qr_code_path', 'Select Default QR / Barcode')}
+                    >
+                      Browse
+                    </Button>
+                  </div>
+                </Form.Item>
+
+                <Form.Item name="letterhead_path" label="Letterhead Image" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Input placeholder="Letterhead image path (.png/.jpg/.jpeg)" />
+                    <Button
+                      icon={<FolderOpenOutlined />}
+                      onClick={() => void pickProjectFile('letterhead_path', 'Select Letterhead Image')}
+                    >
+                      Browse
+                    </Button>
+                  </div>
+                </Form.Item>
               </div>
             </TabPane>
 
@@ -731,6 +1015,16 @@ const Projects: React.FC = () => {
                   these values by sector and fallback to project bank details if a sector is not
                   configured.
                 </Paragraph>
+
+                {editingProjectSummary && editingProjectSummary.sector_codes.length > 0 && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={`Detected sectors: ${editingProjectSummary.sector_codes.join(', ')}`}
+                    description="Add sector rows only where bank account or barcode differs from the project default."
+                    style={{ marginBottom: 16 }}
+                  />
+                )}
 
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
                   {sectorConfigs.map((config, index) => (
@@ -804,14 +1098,18 @@ const Projects: React.FC = () => {
                           placeholder="Branch Address"
                           style={{ gridColumn: 'span 2' }}
                         />
-                        <Input
-                          value={String(config.qr_code_path || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'qr_code_path', e.target.value)
-                          }
-                          placeholder="QR Image Path (.png/.jpg/.jpeg)"
-                          style={{ gridColumn: 'span 2' }}
-                        />
+                        <div style={{ display: 'flex', gap: 8, gridColumn: 'span 2' }}>
+                          <Input
+                            value={String(config.qr_code_path || '')}
+                            onChange={(e) =>
+                              handleSectorConfigChange(index, 'qr_code_path', e.target.value)
+                            }
+                            placeholder="QR Image Path (.png/.jpg/.jpeg)"
+                          />
+                          <Button icon={<FolderOpenOutlined />} onClick={() => void pickSectorQrFile(index)}>
+                            Browse
+                          </Button>
+                        </div>
                       </div>
                     </Card>
                   ))}

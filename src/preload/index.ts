@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import {
   Project,
+  ProjectSetupSummary,
   ProjectSectorPaymentConfig,
   Unit,
   MaintenanceRate,
@@ -16,6 +17,10 @@ const api = {
   projects: {
     getAll: () => ipcRenderer.invoke('get-projects'),
     getById: (id: number) => ipcRenderer.invoke('get-project', id),
+    getSetupSummary: (projectId: number, financialYear?: string) =>
+      ipcRenderer.invoke('get-project-setup-summary', projectId, financialYear) as Promise<ProjectSetupSummary>,
+    getSetupSummaries: (financialYear?: string) =>
+      ipcRenderer.invoke('get-project-setup-summaries', financialYear) as Promise<ProjectSetupSummary[]>,
     create: (project: Project) => ipcRenderer.invoke('create-project', project),
     update: (id: number, project: Partial<Project>) =>
       ipcRenderer.invoke('update-project', id, project),
@@ -92,6 +97,12 @@ const api = {
   },
   shell: {
     showItemInFolder: (path: string) => ipcRenderer.invoke('show-item-in-folder', path)
+  },
+  dialog: {
+    selectFile: (options: {
+      title?: string
+      filters?: { name: string; extensions: string[] }[]
+    }) => ipcRenderer.invoke('select-local-file', options) as Promise<string | null>
   },
   database: {
     repair: () => ipcRenderer.invoke('database-repair')

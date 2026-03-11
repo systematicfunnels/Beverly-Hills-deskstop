@@ -40,6 +40,105 @@ interface ImportUnitPreview extends Unit {
   [key: string]: unknown
 }
 
+interface ImportProfileDetection {
+  key: string
+  label: string
+  description: string
+  reason: string
+}
+
+const STANDARD_IMPORT_PROFILE: ImportProfileDetection = {
+  key: 'standard_normalized',
+  label: 'Standard Platform Sheet',
+  description: 'Normalized workbook aligned to the platform import format.',
+  reason: 'No legacy-specific pattern detected.'
+}
+
+const getNormalizedHeaders = (rows: Record<string, unknown>[]): string[] => {
+  const seen = new Set<string>()
+  const headers: string[] = []
+
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      const normalized = String(key).toLowerCase().trim()
+      if (!normalized || normalized === '__id' || seen.has(normalized)) continue
+      seen.add(normalized)
+      headers.push(normalized)
+    }
+  }
+
+  return headers
+}
+
+const extractFirstMatchingValue = (row: Record<string, unknown>, possibleKeys: string[]): string => {
+  for (const key of Object.keys(row)) {
+    const normalized = String(key).toLowerCase().trim()
+    if (!possibleKeys.includes(normalized)) continue
+    const value = String(row[key] ?? '').trim()
+    if (value) return value
+  }
+  return ''
+}
+
+const detectImportProfile = (rows: Record<string, unknown>[]): ImportProfileDetection => {
+  if (rows.length === 0) return STANDARD_IMPORT_PROFILE
+
+  const headers = getNormalizedHeaders(rows)
+  const yearHeaders = headers.filter((header) => /^\d{4}-\d{2}$/.test(header))
+  const hasSectorColumn = headers.some((header) =>
+    ['sector', 'sector no', 'sector_no', 'sector number', 'block'].includes(header)
+  )
+  const hasPlotColumn = headers.some((header) =>
+    ['plot', 'plot no', 'plot_no', 'plot number'].includes(header)
+  )
+  const hasPipeReplacement = headers.some((header) => /^pipe[\s_-]*replac(e)?ment$/.test(header))
+  const hasGst = headers.some((header) => /^gst(?:_\d+)?$/.test(header))
+  const hasStandardFinancialYear = headers.some((header) =>
+    ['financial_year', 'financial year'].includes(header)
+  )
+  const hasUnitNumber = headers.some((header) =>
+    ['unit_number', 'unit number', 'unit', 'unit_no', 'unitno'].includes(header)
+  )
+
+  const plotSamples = rows
+    .slice(0, 40)
+    .map((row) => extractFirstMatchingValue(row, ['plot', 'plot no', 'plot_no', 'plot number']))
+    .filter(Boolean)
+  const hasMostlyAbcPlots =
+    plotSamples.length > 0 && plotSamples.filter((value) => /^[ABC]/i.test(value)).length >= plotSamples.length * 0.7
+
+  if (hasStandardFinancialYear && hasUnitNumber) {
+    return {
+      key: 'standard_normalized',
+      label: 'Standard Platform Sheet',
+      description: 'Ready-to-import normalized workbook.',
+      reason: 'Found platform-style financial year and unit number columns.'
+    }
+  }
+
+  if (hasSectorColumn && hasPlotColumn && yearHeaders.length >= 3 && (hasPipeReplacement || hasGst)) {
+    return {
+      key: 'banjara_numeric_v1',
+      label: 'Banjara Sector Ledger',
+      description: 'Legacy workbook with sector + plot routing and year-wise columns.',
+      reason: 'Detected sector and plot columns with GST / pipe replacement ledger fields.'
+    }
+  }
+
+  if (hasPlotColumn && yearHeaders.length >= 3 && (hasMostlyAbcPlots || !hasSectorColumn)) {
+    return {
+      key: 'beverly_abc_v1',
+      label: 'Beverly A/B/C Legacy',
+      description: 'Legacy workbook with plot-led sectors and wide year columns.',
+      reason: hasMostlyAbcPlots
+        ? 'Detected plot values primarily starting with A/B/C and multiple year columns.'
+        : 'Detected wide-format plot ledger without an explicit sector column.'
+    }
+  }
+
+  return STANDARD_IMPORT_PROFILE
+}
+
 const Units: React.FC = () => {
   const [units, setUnits] = useState<Unit[]>([])
   const [filteredUnits, setFilteredUnits] = useState<Unit[]>([])
@@ -87,6 +186,45 @@ const Units: React.FC = () => {
     },
     [projects]
   )
+
+  const selectedImportProject = useMemo(
+    () => projects.find((project) => project.id === importProjectId) || null,
+    [projects, importProjectId]
+  )
+
+  const detectedImportProfile = useMemo(() => detectImportProfile(importData), [importData])
+
+  const importAudit = useMemo(() => {
+    const yearColumns = getNormalizedHeaders(importData).filter((header) => /^\d{4}-\d{2}$/.test(header))
+    const sectorCodes = Array.from(
+      new Set(
+        mappedPreview
+          .map((row) => String(row.sector_code || '').trim().toUpperCase())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+    const contactCount = mappedPreview.filter((row) => String(row.contact_number || '').trim() !== '').length
+    const emailCount = mappedPreview.filter((row) => String(row.email || '').trim() !== '').length
+    const ownerCount = mappedPreview.filter((row) => String(row.owner_name || '').trim() !== '').length
+    const unitFrequency = new Map<string, number>()
+    for (const row of mappedPreview) {
+      const unitNumber = String(row.unit_number || '').trim().toUpperCase()
+      if (!unitNumber) continue
+      unitFrequency.set(unitNumber, (unitFrequency.get(unitNumber) || 0) + 1)
+    }
+    const duplicateUnits = Array.from(unitFrequency.entries())
+      .filter(([, count]) => count > 1)
+      .map(([unit]) => unit)
+
+    return {
+      yearColumns,
+      sectorCodes,
+      contactCount,
+      emailCount,
+      ownerCount,
+      duplicateUnits
+    }
+  }, [importData, mappedPreview])
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
@@ -559,6 +697,21 @@ const Units: React.FC = () => {
         projectId: Number(importProjectId),
         rows: rowsToImport
       })
+
+      if (selectedImportProject) {
+        const currentProfile = String(selectedImportProject.import_profile_key || '').trim()
+        if (!currentProfile || currentProfile === 'standard_normalized') {
+          if (detectedImportProfile.key !== 'standard_normalized') {
+            await window.api.projects.update(selectedImportProject.id as number, {
+              import_profile_key: detectedImportProfile.key
+            })
+          }
+        } else if (currentProfile !== detectedImportProfile.key) {
+          message.warning(
+            `Imported workbook looks like "${detectedImportProfile.label}", but project is configured as "${currentProfile}". Review project setup if this was not intentional.`
+          )
+        }
+      }
 
       message.success(`Successfully imported ${rowsToImport.length} unit records and their history`)
       setIsImportModalOpen(false)
@@ -1097,6 +1250,50 @@ const Units: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {importData.length > 0 && (
+            <Alert
+              message={`Detected Workbook: ${detectedImportProfile.label}`}
+              description={
+                <div>
+                  <div>{detectedImportProfile.description}</div>
+                  <div style={{ marginTop: 4 }}>{detectedImportProfile.reason}</div>
+                  <div style={{ marginTop: 8 }}>
+                    FY Columns: {importAudit.yearColumns.length > 0 ? importAudit.yearColumns.join(', ') : 'None'}
+                    {' | '}Sectors:{' '}
+                    {importAudit.sectorCodes.length > 0 ? importAudit.sectorCodes.join(', ') : 'None'}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    Owner rows: {importAudit.ownerCount}/{mappedPreview.length}
+                    {' | '}Contact rows: {importAudit.contactCount}/{mappedPreview.length}
+                    {' | '}Email rows: {importAudit.emailCount}/{mappedPreview.length}
+                  </div>
+                  {selectedImportProject && (
+                    <div style={{ marginTop: 4 }}>
+                      Project import profile:{' '}
+                      {selectedImportProject.import_profile_key || 'Not configured'}
+                    </div>
+                  )}
+                  {importAudit.duplicateUnits.length > 0 && (
+                    <div style={{ marginTop: 4, color: '#d46b08' }}>
+                      Duplicate units in preview: {importAudit.duplicateUnits.slice(0, 5).join(', ')}
+                      {importAudit.duplicateUnits.length > 5
+                        ? ` and ${importAudit.duplicateUnits.length - 5} more`
+                        : ''}
+                    </div>
+                  )}
+                </div>
+              }
+              type={
+                selectedImportProject &&
+                selectedImportProject.import_profile_key &&
+                selectedImportProject.import_profile_key !== detectedImportProfile.key
+                  ? 'warning'
+                  : 'info'
+              }
+              showIcon
+            />
+          )}
 
           {mappedPreview.length > 0 && (
             <div>

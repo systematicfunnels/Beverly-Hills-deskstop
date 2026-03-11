@@ -261,6 +261,10 @@ class DatabaseService {
           this.db.exec('ALTER TABLE projects ADD COLUMN branch TEXT')
         if (!columns.some((c) => c.name === 'branch_address'))
           this.db.exec('ALTER TABLE projects ADD COLUMN branch_address TEXT')
+        if (!columns.some((c) => c.name === 'template_type'))
+          this.db.exec("ALTER TABLE projects ADD COLUMN template_type TEXT DEFAULT 'standard'")
+        if (!columns.some((c) => c.name === 'import_profile_key'))
+          this.db.exec('ALTER TABLE projects ADD COLUMN import_profile_key TEXT')
       }
 
       // 2.1 Ensure maintenance_rates table has new columns

@@ -1,9 +1,10 @@
-import { ipcMain, shell } from 'electron'
+import { dialog, ipcMain, shell } from 'electron'
 import { dbService } from './db/database'
 import {
   projectService,
   Project,
-  ProjectSectorPaymentConfig
+  ProjectSectorPaymentConfig,
+  ProjectSetupSummary
 } from './services/ProjectService'
 import { unitService, Unit } from './services/UnitService'
 import { maintenanceLetterService, MaintenanceLetter } from './services/MaintenanceLetterService'
@@ -40,6 +41,29 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('get-project', (_, id: number): Project | undefined => {
     return projectService.getById(id)
   })
+
+  ipcMain.handle(
+    'get-project-setup-summary',
+    (_, projectId: number, financialYear?: string): ProjectSetupSummary => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      if (financialYear !== undefined && financialYear !== null && !isFinancialYear(financialYear)) {
+        throw new Error('Invalid financial year format (expected YYYY-YY)')
+      }
+      return projectService.getSetupSummary(projectId, financialYear)
+    }
+  )
+
+  ipcMain.handle(
+    'get-project-setup-summaries',
+    (_, financialYear?: string): ProjectSetupSummary[] => {
+      if (financialYear !== undefined && financialYear !== null && !isFinancialYear(financialYear)) {
+        throw new Error('Invalid financial year format (expected YYYY-YY)')
+      }
+      return projectService.getSetupSummaries(financialYear)
+    }
+  )
 
   ipcMain.handle('create-project', (_, project: Project): number => {
     if (!sanitizeText(project?.name)) {
@@ -253,6 +277,29 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('open-pdf', (_, filePath: string): void => {
     shell.openPath(filePath)
   })
+
+  ipcMain.handle(
+    'select-local-file',
+    async (
+      _,
+      options?: {
+        title?: string
+        filters?: { name: string; extensions: string[] }[]
+      }
+    ): Promise<string | null> => {
+      const result = await dialog.showOpenDialog({
+        title: sanitizeText(options?.title) || 'Select File',
+        properties: ['openFile'],
+        filters: Array.isArray(options?.filters) ? options.filters : undefined
+      })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return null
+      }
+
+      return result.filePaths[0]
+    }
+  )
 
   // Payments
   ipcMain.handle('get-payments', (): Payment[] => {
