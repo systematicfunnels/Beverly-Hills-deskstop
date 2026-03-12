@@ -182,8 +182,9 @@ const Reports: React.FC = () => {
 
           const billed = letter ? letter.final_amount : 0
           const paid = paymentsForYear.reduce((sum, p) => sum + p.payment_amount, 0)
+          const balance = billed - paid
 
-          row[year] = { billed, paid, balance: billed - paid }
+          row[year] = { billed, paid, balance }
           row.total_billed += billed
           row.total_paid += paid
         })
@@ -237,6 +238,12 @@ const Reports: React.FC = () => {
         const yearData = row[year] as YearlyData
         return yearData?.billed && yearData.billed > 0
       }).length
+
+      // Validate yearly calculations
+      const calculatedBalance = billed - paid
+      if (Math.abs(calculatedBalance - balance) > 0.01) {
+        console.warn(`Year ${year} balance mismatch: Expected ${calculatedBalance}, Got ${balance}`)
+      }
 
       return {
         year,
@@ -360,6 +367,7 @@ const Reports: React.FC = () => {
         { header: 'Collection %', key: 'collectionRate', width: 15 }
       ]
 
+      // Validate yearly totals calculation
       yearlyTotals.forEach((total) => {
         const collectionRate = total.billed > 0 ? (total.paid / total.billed) * 100 : 0
         summarySheet.addRow({
@@ -372,12 +380,18 @@ const Reports: React.FC = () => {
         })
       })
 
-      // Add summary totals row
+      // Add summary totals row with validation
       const totalBilled = yearlyTotals.reduce((sum, t) => sum + t.billed, 0)
       const totalPaid = yearlyTotals.reduce((sum, t) => sum + t.paid, 0)
       const totalBalance = yearlyTotals.reduce((sum, t) => sum + t.balance, 0)
       const totalUnits = yearlyTotals.reduce((sum, t) => sum + t.unitCount, 0)
       const overallCollectionRate = totalBilled > 0 ? (totalPaid / totalBilled) * 100 : 0
+
+      // Validate that totals match the expected calculations
+      const calculatedTotalBalance = totalBilled - totalPaid
+      if (Math.abs(calculatedTotalBalance - totalBalance) > 0.01) {
+        console.warn(`Balance calculation mismatch: Expected ${calculatedTotalBalance}, Got ${totalBalance}`)
+      }
 
       summarySheet.addRow({})
       const totalRow = summarySheet.addRow({
@@ -446,7 +460,11 @@ const Reports: React.FC = () => {
         worksheet.addRow([]) // Empty row
       }
 
-      // Add rows
+      // Add rows with validation
+      let grandTotalBilled = 0
+      let grandTotalPaid = 0
+      let grandTotalOutstanding = 0
+
       pivotData.forEach((row) => {
         const exportRow: Record<string, string | number> = {
           Project: row.project_name,
@@ -459,17 +477,37 @@ const Reports: React.FC = () => {
           Total_Outstanding: row.outstanding
         }
 
+        // Validate individual row calculations
+        const calculatedOutstanding = row.total_billed - row.total_paid
+        if (Math.abs(calculatedOutstanding - row.outstanding) > 0.01) {
+          console.warn(`Row ${row.unit_number} outstanding mismatch: Expected ${calculatedOutstanding}, Got ${row.outstanding}`)
+        }
+
+        grandTotalBilled += row.total_billed
+        grandTotalPaid += row.total_paid
+        grandTotalOutstanding += row.outstanding
+
         years.forEach((year) => {
           const yearData = row[year] as YearlyData
-          exportRow[`${year}_Billed`] = yearData?.billed || 0
-          exportRow[`${year}_Paid`] = yearData?.paid || 0
-          exportRow[`${year}_Balance`] = yearData?.balance || 0
+          const billed = yearData?.billed || 0
+          const paid = yearData?.paid || 0
+          const balance = yearData?.balance || 0
+
+          // Validate yearly data consistency
+          const calculatedBalance = billed - paid
+          if (Math.abs(calculatedBalance - balance) > 0.01) {
+            console.warn(`Row ${row.unit_number} year ${year} balance mismatch: Expected ${calculatedBalance}, Got ${balance}`)
+          }
+
+          exportRow[`${year}_Billed`] = billed
+          exportRow[`${year}_Paid`] = paid
+          exportRow[`${year}_Balance`] = balance
         })
 
         worksheet.addRow(exportRow)
       })
 
-      // Add summary row
+      // Add summary row with validation
       const summaryRow = worksheet.addRow({})
       summaryRow.getCell('Project').value = 'GRAND TOTAL'
       summaryRow.getCell('Project').font = { bold: true }
@@ -494,6 +532,12 @@ const Reports: React.FC = () => {
           return sum + (yearData?.balance || 0)
         }, 0)
 
+        // Validate yearly totals consistency
+        const calculatedTotalBalance = totalBilled - totalPaid
+        if (Math.abs(calculatedTotalBalance - totalBalance) > 0.01) {
+          console.warn(`Year ${year} balance mismatch: Expected ${calculatedTotalBalance}, Got ${totalBalance}`)
+        }
+
         summaryRow.getCell(billedCol).value = totalBilled
         summaryRow.getCell(paidCol).value = totalPaid
         summaryRow.getCell(balanceCol).value = totalBalance
@@ -502,6 +546,17 @@ const Reports: React.FC = () => {
         summaryRow.getCell(paidCol).font = { bold: true }
         summaryRow.getCell(balanceCol).font = { bold: true }
       })
+
+      // Validate final totals
+      if (Math.abs(grandTotalBilled - stats.totalBilled) > 0.01) {
+        console.warn(`Grand total billed mismatch: Expected ${stats.totalBilled}, Got ${grandTotalBilled}`)
+      }
+      if (Math.abs(grandTotalPaid - stats.totalCollected) > 0.01) {
+        console.warn(`Grand total paid mismatch: Expected ${stats.totalCollected}, Got ${grandTotalPaid}`)
+      }
+      if (Math.abs(grandTotalOutstanding - stats.outstanding) > 0.01) {
+        console.warn(`Grand total outstanding mismatch: Expected ${stats.outstanding}, Got ${grandTotalOutstanding}`)
+      }
 
       summaryRow.getCell('Total_Billed').value = stats.totalBilled
       summaryRow.getCell('Total_Paid').value = stats.totalCollected
@@ -577,16 +632,32 @@ const Reports: React.FC = () => {
       key: 'unit_number',
       fixed: 'left' as const,
       width: 100,
-      sorter: (a: PivotData, b: PivotData) => a.unit_number.localeCompare(b.unit_number)
+      sorter: (a: PivotData, b: PivotData) => a.unit_number.localeCompare(b.unit_number),
+      render: (unitNumber: string, record: PivotData) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{unitNumber}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {record.owner_name || 'No owner assigned'}
+          </div>
+        </div>
+      )
     },
     {
       title: 'Owner',
       dataIndex: 'owner_name',
       key: 'owner_name',
       fixed: 'left' as const,
-      width: 150,
+      width: 200,
       ellipsis: true,
-      sorter: (a: PivotData, b: PivotData) => a.owner_name.localeCompare(b.owner_name)
+      sorter: (a: PivotData, b: PivotData) => a.owner_name.localeCompare(b.owner_name),
+      render: (ownerName: string) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{ownerName || 'No owner assigned'}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {ownerName ? 'Property Owner' : 'Please update owner details'}
+          </div>
+        </div>
+      )
     },
     {
       title: 'Type',
@@ -718,13 +789,16 @@ const Reports: React.FC = () => {
         <div style={{ marginBottom: 16 }}>
           <Space wrap size="middle">
             <Search
-              placeholder="Search unit, owner, project..."
+              placeholder="Search unit, owner, or project..."
               prefix={<SearchOutlined />}
               style={{ width: 250 }}
               allowClear
               onChange={(e) => setSearchText(e.target.value)}
               onSearch={setSearchText}
               value={searchText}
+              enterButton
+              suffix={null}
+              aria-label="Search reports by unit, owner, or project"
             />
             <Select
               placeholder="Project"

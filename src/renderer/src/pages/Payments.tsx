@@ -509,7 +509,30 @@ const Payments: React.FC = () => {
       title: 'Unit',
       dataIndex: 'unit_number',
       key: 'unit_number',
-      sorter: (a: Payment, b: Payment) => (a.unit_number || '').localeCompare(b.unit_number || '')
+      sorter: (a: Payment, b: Payment) => (a.unit_number || '').localeCompare(b.unit_number || ''),
+      render: (unitNumber: string, record: Payment) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{unitNumber}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {record.owner_name || 'No owner assigned'}
+          </div>
+        </div>
+      )
+    },
+    {
+      title: 'Owner',
+      dataIndex: 'owner_name',
+      key: 'owner_name',
+      width: 200,
+      sorter: (a: Payment, b: Payment) => (a.owner_name || '').localeCompare(b.owner_name || ''),
+      render: (ownerName: string) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{ownerName || 'No owner assigned'}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {ownerName ? 'Property Owner' : 'Please update owner details'}
+          </div>
+        </div>
+      )
     },
     {
       title: 'Date',
@@ -705,7 +728,7 @@ const Payments: React.FC = () => {
         <div style={{ marginBottom: 24 }}>
           <Space wrap size="middle">
             <Search
-              placeholder="Search receipt, unit, owner..."
+              placeholder="Search receipt, unit, owner, or project..."
               allowClear
               onChange={(e) => setSearchText(e.target.value)}
               onSearch={setSearchText}
@@ -713,7 +736,7 @@ const Payments: React.FC = () => {
               enterButton
               suffix={null}
               value={searchText}
-              aria-label="Search payments"
+              aria-label="Search payments by receipt, unit, owner, or project"
             />
             <Select
               placeholder="Project"

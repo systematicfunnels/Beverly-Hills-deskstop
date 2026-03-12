@@ -229,12 +229,74 @@ class MaintenanceLetterService {
     const { width, height } = page.getSize()
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+    const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
 
+    // Enhanced Header Design
+    await this.drawEnhancedHeader(page, pdfDoc, letter, width, height, boldFont, italicFont)
+
+    // Letter Details Section
+    const detailsY = height - 150
+    this.drawLetterDetails(page, letter, detailsY, boldFont, font, width)
+
+    // Unit Information Section
+    const unitInfoY = detailsY - 80
+    this.drawUnitInformation(page, letter, unitInfoY, boldFont, font)
+
+    // Financial Table Section
+    const tableY = height - 320
+    const tableData = this.prepareTableData(letter, addOns)
+    const tableHeight = this.drawFinancialTable(page, tableData, tableY, boldFont, font, width)
+
+    // Total Section
+    const totalY = tableY - tableHeight - 20
+    this.drawTotalSection(page, letter, totalY, boldFont, width)
+
+    // Bank Details Section
+    const bankY = totalY - 120
+    await this.drawBankDetails(page, pdfDoc, letter, bankY, boldFont, font, width)
+
+    // Footer Section
+    this.drawFooter(page, letter, boldFont, font, italicFont, width)
+
+    const pdfBytes = await pdfDoc.save()
+    const pdfDir = path.join(app.getPath('userData'), 'maintenance_letters')
+    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true })
+
+    const safeUnitNumber = this.sanitizeFileNamePart(letter.unit_number || 'UNKNOWN')
+    const fileName = `ML_${letter.id}_${safeUnitNumber}_Enhanced.pdf`
+    const filePath = path.join(pdfDir, fileName)
+    fs.writeFileSync(filePath, pdfBytes)
+
+    dbService.run('UPDATE maintenance_letters SET pdf_path = ? WHERE id = ?', [filePath, letterId])
+    return filePath
+  }
+
+  private async drawEnhancedHeader(page: any, pdfDoc: any, letter: MaintenanceLetter, width: number, height: number, boldFont: any, italicFont: any): Promise<void> {
     const letterheadPath = letter.letterhead_path ? path.resolve(letter.letterhead_path) : ''
     const letterheadExt = path.extname(letterheadPath).toLowerCase()
     const hasSupportedLetterhead =
       (letterheadExt === '.png' || letterheadExt === '.jpg' || letterheadExt === '.jpeg') &&
       fs.existsSync(letterheadPath)
+
+    // Header Background
+    page.drawRectangle({
+      x: 0,
+      y: height - 140,
+      width: width,
+      height: 140,
+      color: rgb(0.05, 0.3, 0.2)
+    })
+
+    // Header Border
+    page.drawRectangle({
+      x: 0,
+      y: height - 140,
+      width: width,
+      height: 140,
+      color: rgb(0.08, 0.45, 0.3),
+      border: true,
+      borderWidth: 2
+    })
 
     if (hasSupportedLetterhead) {
       try {
@@ -244,160 +306,419 @@ class MaintenanceLetterService {
             ? await pdfDoc.embedPng(letterheadBytes)
             : await pdfDoc.embedJpg(letterheadBytes)
         page.drawImage(letterheadImage, {
-          x: 0,
-          y: height - 100,
-          width,
-          height: 100
+          x: 20,
+          y: height - 130,
+          width: 120,
+          height: 120
         })
       } catch (error) {
         console.error('Error embedding letterhead image:', error)
-        page.drawRectangle({
-          x: 0,
-          y: height - 100,
-          width: width,
-          height: 100,
-          color: rgb(0.17, 0.48, 0.37)
-        })
       }
-    } else {
-      page.drawRectangle({
-        x: 0,
-        y: height - 100,
-        width: width,
-        height: 100,
-        color: rgb(0.17, 0.48, 0.37)
-      })
     }
 
-    page.drawText(letter.project_name?.toUpperCase() || 'MAINTENANCE LETTER', {
-      x: 50,
-      y: height - 50,
-      size: 24,
+    // Header Text
+    const projectName = letter.project_name || 'MAINTENANCE LETTER'
+    page.drawText(projectName.toUpperCase(), {
+      x: 160,
+      y: height - 60,
+      size: 28,
       font: boldFont,
       color: rgb(1, 1, 1)
     })
 
     page.drawText('RESIDENTIAL MAINTENANCE LETTER', {
-      x: 50,
+      x: 160,
+      y: height - 90,
+      size: 14,
+      font: italicFont,
+      color: rgb(0.9, 0.95, 0.9)
+    })
+
+    // Header Decorative Elements
+    page.drawLine({
+      start: { x: 160, y: height - 105 },
+      end: { x: width - 30, y: height - 105 },
+      color: rgb(0.2, 0.6, 0.4),
+      thickness: 1
+    })
+
+    // Header Icons
+    page.drawCircle({
+      x: width - 80,
       y: height - 80,
+      size: 40,
+      color: rgb(0.1, 0.5, 0.35)
+    })
+
+    page.drawText('Rs', {
+      x: width - 95,
+      y: height - 95,
+      size: 30,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    })
+  }
+
+  private drawLetterDetails(page: any, letter: MaintenanceLetter, y: number, boldFont: any, font: any, width: number): void {
+    // Letter Details Box
+    page.drawRectangle({
+      x: 30,
+      y: y - 60,
+      width: width - 60,
+      height: 60,
+      color: rgb(0.95, 0.95, 0.95)
+    })
+
+    page.drawRectangle({
+      x: 30,
+      y: y - 60,
+      width: width - 60,
+      height: 60,
+      color: rgb(0.8, 0.8, 0.8),
+      border: true,
+      borderWidth: 1
+    })
+
+    // Letter Details Content
+    page.drawText('LETTER INFORMATION', {
+      x: 40,
+      y: y - 20,
       size: 12,
+      font: boldFont,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+
+    page.drawText(`Letter No: ML-${letter.id}`, {
+      x: 40,
+      y: y - 40,
+      size: 10,
       font: font,
-      color: rgb(0.9, 0.9, 0.9)
+      color: rgb(0.4, 0.4, 0.4)
     })
 
-    // Letter details box
-    const detailsY = height - 150
-    page.drawText(`LETTER NO: ML-${letter.id}`, { x: 400, y: detailsY, size: 10, font: boldFont })
-    page.drawText(`DATE: ${letter.generated_date?.split(' ')[0] || ''}`, {
-      x: 400,
-      y: detailsY - 15,
+    page.drawText(`Generated: ${letter.generated_date?.split(' ')[0] || ''}`, {
+      x: 200,
+      y: y - 40,
       size: 10,
-      font
-    })
-    page.drawText(`DUE DATE: ${letter.due_date || 'N/A'}`, {
-      x: 400,
-      y: detailsY - 30,
-      size: 10,
-      font,
-      color: rgb(0.8, 0, 0)
+      font: font,
+      color: rgb(0.4, 0.4, 0.4)
     })
 
-    // Unit Details
-    page.drawText('TO:', { x: 50, y: detailsY, size: 10, font: boldFont })
-    page.drawText(`${letter.owner_name}`, { x: 50, y: detailsY - 15, size: 12, font: boldFont })
-    page.drawText(`Unit No: ${letter.unit_number}`, { x: 50, y: detailsY - 30, size: 10, font })
+    const dueDateColor = letter.due_date ? 
+      (new Date(letter.due_date) < new Date() ? rgb(0.8, 0, 0) : rgb(0.2, 0.6, 0.2)) : 
+      rgb(0.4, 0.4, 0.4)
 
-    // Billing Period
-    page.drawText(`Financial Year: ${letter.financial_year}`, {
-      x: 50,
-      y: detailsY - 50,
+    page.drawText(`Due Date: ${letter.due_date || 'N/A'}`, {
+      x: 360,
+      y: y - 40,
       size: 10,
-      font: boldFont
+      font: font,
+      color: dueDateColor
     })
 
-    // Table Header
-    const tableY = height - 260
-    page.drawRectangle({ x: 50, y: tableY, width: 500, height: 25, color: rgb(0.17, 0.48, 0.37) })
-    page.drawText('DESCRIPTION', {
-      x: 60,
-      y: tableY + 7,
-      size: 10,
-      font: boldFont,
-      color: rgb(1, 1, 1)
+    // Status Badge
+    const statusColor = letter.status === 'Paid' ? rgb(0.2, 0.6, 0.2) : 
+                       letter.status === 'Overdue' ? rgb(0.8, 0, 0) : rgb(0.6, 0.6, 0.6)
+
+    page.drawRectangle({
+      x: width - 150,
+      y: y - 50,
+      width: 110,
+      height: 25,
+      color: statusColor
     })
-    page.drawText('AMOUNT (Rs.)', {
-      x: 450,
-      y: tableY + 7,
+
+    page.drawText(`Status: ${letter.status || 'Pending'}`, {
+      x: width - 145,
+      y: y - 45,
       size: 10,
       font: boldFont,
       color: rgb(1, 1, 1)
     })
+  }
 
-    // Table Content
-    let currentY = tableY - 25
-    const items: { desc: string; amt: number }[] = []
+  private drawUnitInformation(page: any, letter: MaintenanceLetter, y: number, boldFont: any, font: any): void {
+    // Unit Information Box
+    page.drawRectangle({
+      x: 30,
+      y: y - 80,
+      width: 350,
+      height: 80,
+      color: rgb(0.98, 0.98, 0.98)
+    })
+
+    page.drawRectangle({
+      x: 30,
+      y: y - 80,
+      width: 350,
+      height: 80,
+      color: rgb(0.85, 0.85, 0.85),
+      border: true,
+      borderWidth: 1
+    })
+
+    // Unit Information Content
+    page.drawText('BILLING INFORMATION', {
+      x: 40,
+      y: y - 20,
+      size: 12,
+      font: boldFont,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+
+    page.drawText('To:', {
+      x: 40,
+      y: y - 40,
+      size: 10,
+      font: boldFont,
+      color: rgb(0.3, 0.3, 0.3)
+    })
+
+    page.drawText(`${letter.owner_name || 'N/A'}`, {
+      x: 80,
+      y: y - 40,
+      size: 12,
+      font: boldFont,
+      color: rgb(0.1, 0.1, 0.1)
+    })
+
+    page.drawText('Unit No:', {
+      x: 40,
+      y: y - 60,
+      size: 10,
+      font: boldFont,
+      color: rgb(0.3, 0.3, 0.3)
+    })
+
+    page.drawText(`${letter.unit_number || 'N/A'}`, {
+      x: 120,
+      y: y - 60,
+      size: 11,
+      font: font,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+
+    page.drawText('Financial Year:', {
+      x: 200,
+      y: y - 60,
+      size: 10,
+      font: boldFont,
+      color: rgb(0.3, 0.3, 0.3)
+    })
+
+    page.drawText(`${letter.financial_year || 'N/A'}`, {
+      x: 300,
+      y: y - 60,
+      size: 11,
+      font: font,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+  }
+
+  private prepareTableData(letter: MaintenanceLetter, addOns: AddOn[]): Array<{ desc: string; amt: number; type: 'base' | 'addon' | 'arrears' | 'discount' | 'total' }> {
+    const items: Array<{ desc: string; amt: number; type: 'base' | 'addon' | 'arrears' | 'discount' | 'total' }> = []
 
     // Add Base Amount
-    items.push({ desc: 'Annual Maintenance Charges', amt: letter.base_amount })
+    items.push({ desc: 'Annual Maintenance Charges', amt: letter.base_amount, type: 'base' })
 
     // Add Arrears or Advance
     if (letter.arrears && letter.arrears !== 0) {
       if (letter.arrears > 0) {
-        items.push({ desc: 'Previous Arrears', amt: letter.arrears })
+        items.push({ desc: 'Previous Arrears', amt: letter.arrears, type: 'arrears' })
       } else {
-        items.push({ desc: 'Advance Payment / Credit', amt: letter.arrears })
+        items.push({ desc: 'Advance Payment / Credit', amt: letter.arrears, type: 'arrears' })
       }
     }
 
+    // Add Add-ons
     addOns.forEach((addon) => {
-      items.push({ desc: addon.addon_name, amt: addon.addon_amount })
+      items.push({ desc: addon.addon_name, amt: addon.addon_amount, type: 'addon' })
     })
 
+    // Add Discount
     if (letter.discount_amount > 0) {
-      items.push({ desc: 'Early Payment Discount', amt: -letter.discount_amount })
+      items.push({ desc: 'Early Payment Discount', amt: -letter.discount_amount, type: 'discount' })
     }
 
-    items.forEach((item) => {
-      page.drawText(item.desc, { x: 60, y: currentY, size: 10, font })
-      page.drawText(item.amt.toFixed(2), { x: 450, y: currentY, size: 10, font })
-      currentY -= 20
+    return items
+  }
+
+  private drawFinancialTable(page: any, tableData: Array<{ desc: string; amt: number; type: string }>, y: number, boldFont: any, font: any, width: number): number {
+    // Table Header
+    page.drawRectangle({ x: 30, y: y, width: width - 60, height: 30, color: rgb(0.1, 0.5, 0.35) })
+    page.drawRectangle({ x: 30, y: y, width: width - 60, height: 30, color: rgb(0.08, 0.45, 0.3), border: true, borderWidth: 1 })
+
+    page.drawText('DESCRIPTION', {
+      x: 40,
+      y: y + 8,
+      size: 11,
+      font: boldFont,
+      color: rgb(1, 1, 1)
     })
 
-    // Total
-    page.drawLine({ start: { x: 50, y: currentY + 10 }, end: { x: 550, y: currentY + 10 } })
-    page.drawText('Total Amount Payable', { x: 60, y: currentY - 5, size: 12, font: boldFont })
-    page.drawText(`Rs. ${letter.final_amount.toFixed(2)}`, {
-      x: 450,
-      y: currentY - 5,
-      size: 12,
-      font: boldFont
+    page.drawText('AMOUNT (Rs.)', {
+      x: width - 150,
+      y: y + 8,
+      size: 11,
+      font: boldFont,
+      color: rgb(1, 1, 1)
     })
 
-    // Bank Details
-    currentY -= 60
-    page.drawText('Bank Details for Payment:', { x: 50, y: currentY, size: 10, font: boldFont })
-    page.drawText(`Name: ${letter.account_name || 'N/A'}`, { x: 50, y: currentY - 15, size: 10, font })
-    page.drawText(`Bank: ${letter.bank_name || 'N/A'}`, { x: 50, y: currentY - 30, size: 10, font })
-    page.drawText(`A/C No: ${letter.account_no || 'N/A'}`, {
-      x: 50,
-      y: currentY - 45,
-      size: 10,
-      font
-    })
-    page.drawText(`IFSC: ${letter.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 60, size: 10, font })
-    if (letter.branch) {
-      page.drawText(`Branch: ${letter.branch}`, { x: 50, y: currentY - 75, size: 10, font })
-    }
-    if (letter.branch_address) {
-      page.drawText(`Address: ${letter.branch_address}`, {
-        x: 50,
-        y: currentY - 90,
+    // Table Rows
+    let currentY = y - 30
+    let totalAmount = 0
+
+    tableData.forEach((item, index) => {
+      const rowHeight = 25
+
+      // Row Background
+      const rowColor = index % 2 === 0 ? rgb(0.98, 0.98, 0.98) : rgb(0.95, 0.95, 0.95)
+      page.drawRectangle({ x: 30, y: currentY - rowHeight, width: width - 60, height: rowHeight, color: rowColor })
+
+      // Row Border
+      page.drawRectangle({ x: 30, y: currentY - rowHeight, width: width - 60, height: rowHeight, color: rgb(0.85, 0.85, 0.85), border: true, borderWidth: 0.5 })
+
+      // Description
+      const descColor = item.type === 'discount' ? rgb(0.8, 0, 0) : 
+                       item.type === 'arrears' ? (item.amt > 0 ? rgb(0.6, 0.3, 0.1) : rgb(0.1, 0.5, 0.1)) :
+                       rgb(0.2, 0.2, 0.2)
+
+      page.drawText(item.desc, {
+        x: 40,
+        y: currentY - 18,
         size: 10,
-        font
+        font: font,
+        color: descColor
       })
+
+      // Amount
+      const amountText = item.amt.toFixed(2)
+      const amountColor = item.type === 'discount' ? rgb(0.8, 0, 0) : rgb(0.1, 0.1, 0.1)
+
+      page.drawText(amountText, {
+        x: width - 150,
+        y: currentY - 18,
+        size: 10,
+        font: font,
+        color: amountColor
+      })
+
+      totalAmount += item.amt
+      currentY -= rowHeight
+    })
+
+    // Total Row
+    page.drawLine({ start: { x: 30, y: currentY - 5 }, end: { x: width - 30, y: currentY - 5 }, color: rgb(0.3, 0.3, 0.3), thickness: 1 })
+
+    page.drawText('TOTAL AMOUNT PAYABLE', {
+      x: 40,
+      y: currentY - 20,
+      size: 12,
+      font: boldFont,
+      color: rgb(0.1, 0.1, 0.1)
+    })
+
+    page.drawText(`Rs. ${totalAmount.toFixed(2)}`, {
+      x: width - 150,
+      y: currentY - 20,
+      size: 14,
+      font: boldFont,
+      color: rgb(0.8, 0, 0)
+    })
+
+    return Math.abs(currentY - y) + 30
+  }
+
+  private drawTotalSection(page: any, letter: MaintenanceLetter, y: number, boldFont: any, width: number): void {
+    // Total Section Box
+    page.drawRectangle({
+      x: 30,
+      y: y - 40,
+      width: width - 60,
+      height: 40,
+      color: rgb(0.95, 0.95, 0.95)
+    })
+
+    page.drawRectangle({
+      x: 30,
+      y: y - 40,
+      width: width - 60,
+      height: 40,
+      color: rgb(0.8, 0.8, 0.8),
+      border: true,
+      borderWidth: 1
+    })
+
+    // Total Information
+    page.drawText('PAYMENT SUMMARY', {
+      x: 40,
+      y: y - 15,
+      size: 12,
+      font: boldFont,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+
+    page.drawText(`Final Amount: Rs. ${letter.final_amount.toFixed(2)}`, {
+      x: 200,
+      y: y - 30,
+      size: 11,
+      font: boldFont,
+      color: rgb(0.8, 0, 0)
+    })
+  }
+
+  private async drawBankDetails(page: any, pdfDoc: any, letter: MaintenanceLetter, y: number, boldFont: any, font: any, width: number): Promise<void> {
+    // Bank Details Box
+    page.drawRectangle({
+      x: 30,
+      y: y - 120,
+      width: width - 60,
+      height: 120,
+      color: rgb(0.98, 0.98, 0.98)
+    })
+
+    page.drawRectangle({
+      x: 30,
+      y: y - 120,
+      width: width - 60,
+      height: 120,
+      color: rgb(0.85, 0.85, 0.85),
+      border: true,
+      borderWidth: 1
+    })
+
+    // Bank Details Content
+    page.drawText('PAYMENT INSTRUCTIONS', {
+      x: 40,
+      y: y - 20,
+      size: 12,
+      font: boldFont,
+      color: rgb(0.2, 0.2, 0.2)
+    })
+
+    page.drawText('Bank Name:', { x: 40, y: y - 45, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+    page.drawText(letter.bank_name || 'N/A', { x: 140, y: y - 45, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
+
+    page.drawText('Account Name:', { x: 40, y: y - 65, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+    page.drawText(letter.account_name || 'N/A', { x: 140, y: y - 65, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
+
+    page.drawText('Account No:', { x: 40, y: y - 85, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+    page.drawText(letter.account_no || 'N/A', { x: 140, y: y - 85, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
+
+    page.drawText('IFSC Code:', { x: 40, y: y - 105, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+    page.drawText(letter.ifsc_code || 'N/A', { x: 140, y: y - 105, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
+
+    if (letter.branch) {
+      page.drawText('Branch:', { x: 320, y: y - 45, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+      page.drawText(letter.branch, { x: 400, y: y - 45, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
     }
 
-    // Add project-configured QR image if available
+    if (letter.branch_address) {
+      page.drawText('Branch Address:', { x: 320, y: y - 65, size: 10, font: boldFont, color: rgb(0.3, 0.3, 0.3) })
+      page.drawText(letter.branch_address, { x: 400, y: y - 65, size: 10, font: font, color: rgb(0.2, 0.2, 0.2) })
+    }
+
+    // QR Code Section
     const qrPath = letter.qr_code_path ? path.resolve(letter.qr_code_path) : ''
     const qrExt = path.extname(qrPath).toLowerCase()
     const isSupportedQrImage = qrExt === '.png' || qrExt === '.jpg' || qrExt === '.jpeg'
@@ -406,35 +727,86 @@ class MaintenanceLetterService {
         const qrImageBytes = fs.readFileSync(qrPath)
         const qrImage =
           qrExt === '.png' ? await pdfDoc.embedPng(qrImageBytes) : await pdfDoc.embedJpg(qrImageBytes)
-        // Draw image (100x100) to the right of bank details
         page.drawImage(qrImage, {
-          x: 400,
-          y: currentY - 100,
-          width: 100,
-          height: 100
+          x: width - 140,
+          y: y - 110,
+          width: 90,
+          height: 90
         })
-        page.drawText('Scan to Pay', {
-          x: 420,
-          y: currentY - 115,
+        page.drawText('SCAN TO PAY', {
+          x: width - 135,
+          y: y - 125,
           size: 10,
-          font: boldFont
+          font: boldFont,
+          color: rgb(0.1, 0.5, 0.35)
         })
       } catch (error) {
         console.error('Error embedding QR image:', error)
       }
     }
+  }
 
-    const pdfBytes = await pdfDoc.save()
-    const pdfDir = path.join(app.getPath('userData'), 'maintenance_letters')
-    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true })
+  private drawFooter(page: any, letter: MaintenanceLetter, boldFont: any, font: any, italicFont: any, width: number): void {
+    // Footer Background
+    page.drawRectangle({
+      x: 0,
+      y: 30,
+      width: width,
+      height: 80,
+      color: rgb(0.05, 0.3, 0.2)
+    })
 
-    const safeUnitNumber = this.sanitizeFileNamePart(letter.unit_number || 'UNKNOWN')
-    const fileName = `ML_${letter.id}_${safeUnitNumber}.pdf`
-    const filePath = path.join(pdfDir, fileName)
-    fs.writeFileSync(filePath, pdfBytes)
+    page.drawRectangle({
+      x: 0,
+      y: 30,
+      width: width,
+      height: 80,
+      color: rgb(0.08, 0.45, 0.3),
+      border: true,
+      borderWidth: 2
+    })
 
-    dbService.run('UPDATE maintenance_letters SET pdf_path = ? WHERE id = ?', [filePath, letterId])
-    return filePath
+    // Footer Content
+    page.drawText('Thank you for your prompt payment!', {
+      x: 40,
+      y: 80,
+      size: 14,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    })
+
+    page.drawText('For any queries, please contact our office.', {
+      x: 40,
+      y: 60,
+      size: 10,
+      font: italicFont,
+      color: rgb(0.9, 0.95, 0.9)
+    })
+
+    page.drawText('Office Hours: 10:00 AM - 6:00 PM (Mon-Sat)', {
+      x: 40,
+      y: 40,
+      size: 9,
+      font: font,
+      color: rgb(0.8, 0.9, 0.8)
+    })
+
+    // Footer Decorative Elements
+    page.drawLine({
+      start: { x: 40, y: 95 },
+      end: { x: 250, y: 95 },
+      color: rgb(0.2, 0.6, 0.4),
+      thickness: 1
+    })
+
+    // Page Number
+    page.drawText(`Page 1 of 1`, {
+      x: width - 100,
+      y: 40,
+      size: 9,
+      font: font,
+      color: rgb(0.8, 0.9, 0.8)
+    })
   }
 
   public createBatch(

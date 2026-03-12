@@ -647,7 +647,31 @@ const Billing: React.FC = () => {
       dataIndex: 'unit_number',
       key: 'unit_number',
       sorter: (a: MaintenanceLetter, b: MaintenanceLetter) =>
-        (a.unit_number || '').localeCompare(b.unit_number || '')
+        (a.unit_number || '').localeCompare(b.unit_number || ''),
+      render: (unitNumber: string, record: MaintenanceLetter) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{unitNumber}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {record.owner_name || 'No owner assigned'}
+          </div>
+        </div>
+      )
+    },
+    {
+      title: 'Owner',
+      dataIndex: 'owner_name',
+      key: 'owner_name',
+      width: 200,
+      sorter: (a: MaintenanceLetter, b: MaintenanceLetter) =>
+        (a.owner_name || '').localeCompare(b.owner_name || ''),
+      render: (ownerName: string) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{ownerName || 'No owner assigned'}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {ownerName ? 'Property Owner' : 'Please update owner details'}
+          </div>
+        </div>
+      )
     },
     {
       title: 'Type',
@@ -818,12 +842,15 @@ const Billing: React.FC = () => {
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Space wrap size="middle">
             <Search
-              placeholder="Search Unit / Owner..."
+              placeholder="Search Unit, Owner, or Project..."
               style={{ width: 250 }}
               allowClear
               onSearch={setSearchText}
               onChange={(e) => setSearchText(e.target.value)}
               value={searchText}
+              enterButton
+              suffix={null}
+              aria-label="Search maintenance letters by unit, owner, or project"
             />
             <Select
               placeholder="Project"
