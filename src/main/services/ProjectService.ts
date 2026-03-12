@@ -28,12 +28,6 @@ export interface ProjectSectorPaymentConfig {
   id?: number
   project_id: number
   sector_code: string
-  account_name?: string
-  bank_name?: string
-  account_no?: string
-  ifsc_code?: string
-  branch?: string
-  branch_address?: string
   qr_code_path?: string
   created_at?: string
   updated_at?: string
@@ -218,26 +212,12 @@ class ProjectService {
 
     return {
       sector_code: sectorCode,
-      account_name: this.sanitizeText(config.account_name),
-      bank_name: this.sanitizeText(config.bank_name),
-      account_no: this.sanitizeText(config.account_no),
-      ifsc_code: this.sanitizeText(config.ifsc_code).toUpperCase(),
-      branch: this.sanitizeText(config.branch),
-      branch_address: this.sanitizeText(config.branch_address),
       qr_code_path: this.sanitizeText(config.qr_code_path)
     }
   }
 
   private hasSectorConfigDetails(config: Partial<ProjectSectorPaymentConfig>): boolean {
-    return [
-      config.account_name,
-      config.bank_name,
-      config.account_no,
-      config.ifsc_code,
-      config.branch,
-      config.branch_address,
-      config.qr_code_path
-    ].some((value) => this.sanitizeText(value).length > 0)
+    return this.sanitizeText(config.qr_code_path).length > 0
   }
 
   private normalizeUnitType(unitType: unknown): string {
@@ -537,17 +517,11 @@ class ProjectService {
 
         dbService.run(
           `INSERT INTO project_sector_payment_configs (
-            project_id, sector_code, account_name, bank_name, account_no, ifsc_code, branch, branch_address, qr_code_path
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            project_id, sector_code, qr_code_path
+          ) VALUES (?, ?, ?)`,
           [
             projectId,
             sectorCode,
-            config.account_name,
-            config.bank_name,
-            config.account_no,
-            config.ifsc_code,
-            config.branch,
-            config.branch_address,
             config.qr_code_path
           ]
         )
@@ -596,12 +570,6 @@ class ProjectService {
             this.sanitizeText(config.sector_code).toUpperCase(),
             {
               sector_code: this.sanitizeText(config.sector_code).toUpperCase(),
-              account_name: this.sanitizeText(config.account_name),
-              bank_name: this.sanitizeText(config.bank_name),
-              account_no: this.sanitizeText(config.account_no),
-              ifsc_code: this.sanitizeText(config.ifsc_code).toUpperCase(),
-              branch: this.sanitizeText(config.branch),
-              branch_address: this.sanitizeText(config.branch_address),
               qr_code_path: this.sanitizeText(config.qr_code_path)
             }
           ])
@@ -677,18 +645,11 @@ class ProjectService {
 
     const sectorConfigRows = dbService.query<{
       sector_code: string
-      has_core_payment_details: number
       has_qr: number
     }>(
       `
       SELECT
         UPPER(TRIM(sector_code)) as sector_code,
-        CASE
-          WHEN TRIM(COALESCE(bank_name, '')) <> ''
-            AND TRIM(COALESCE(account_no, '')) <> ''
-            AND TRIM(COALESCE(ifsc_code, '')) <> ''
-          THEN 1 ELSE 0
-        END as has_core_payment_details,
         CASE
           WHEN TRIM(COALESCE(qr_code_path, '')) <> ''
           THEN 1 ELSE 0
@@ -700,16 +661,11 @@ class ProjectService {
     )
 
     const configuredSectorCodes = sectorConfigRows
-      .filter((row) => row.has_core_payment_details === 1 || row.has_qr === 1)
+      .filter((row) => row.has_qr === 1)
       .map((row) => row.sector_code)
       .filter((value, index, arr) => value && arr.indexOf(value) === index)
       .sort((a, b) => a.localeCompare(b))
 
-    const sectorsWithCorePayment = new Set(
-      sectorConfigRows
-        .filter((row) => row.has_core_payment_details === 1)
-        .map((row) => row.sector_code)
-    )
     const sectorsWithQr = new Set(sectorConfigRows.filter((row) => row.has_qr === 1).map((row) => row.sector_code))
 
     const hasDefaultPaymentDetails =
@@ -718,9 +674,6 @@ class ProjectService {
       !!String(project.ifsc_code || '').trim()
     const hasDefaultQr = !!String(project.qr_code_path || '').trim()
 
-    const sectorsMissingCorePaymentConfig = sectorCodes.filter(
-      (sectorCode) => !sectorsWithCorePayment.has(sectorCode)
-    )
     const sectorsWithoutQrCoverage = sectorCodes.filter(
       (sectorCode) => !hasDefaultQr && !sectorsWithQr.has(sectorCode)
     )
@@ -783,24 +736,12 @@ class ProjectService {
       warnings.push('No maintenance rates are configured yet.')
     }
 
-    if (!hasDefaultPaymentDetails && sectorsMissingCorePaymentConfig.length > 0) {
-      blockers.push(
-        `Add project bank details or configure sector payment details for: ${sectorsMissingCorePaymentConfig.join(', ')}.`
-      )
-    }
-
     if (!project.import_profile_key) {
       warnings.push('Import profile is not selected. Excel parsing may be inconsistent.')
     }
 
     if (!project.template_type) {
       warnings.push('Template type is not selected. Standard maintenance letter layout will be used.')
-    }
-
-    if (sectorCodes.length > 1 && sectorsMissingCorePaymentConfig.length > 0 && hasDefaultPaymentDetails) {
-      warnings.push(
-        `Sector-specific payment setup is missing for: ${sectorsMissingCorePaymentConfig.join(', ')}. Project bank details will be used as fallback.`
-      )
     }
 
     if (sectorCodes.length > 1 && configuredSectorCodes.length === 0) {
@@ -823,7 +764,7 @@ class ProjectService {
       unit_count: unitCount,
       sector_codes: sectorCodes,
       configured_sector_codes: configuredSectorCodes,
-      sectors_missing_core_payment_config: sectorsMissingCorePaymentConfig,
+      sectors_missing_core_payment_config: [],
       sectors_without_qr_coverage: sectorsWithoutQrCoverage,
       unit_types: unitTypes,
       rate_years: rateYears,

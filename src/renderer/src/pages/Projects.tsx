@@ -499,23 +499,11 @@ const Projects: React.FC = () => {
       const preparedSectorConfigs = sectorConfigs
         .map((config) => ({
           sector_code: String(config.sector_code || '').trim().toUpperCase(),
-          account_name: String(config.account_name || '').trim(),
-          bank_name: String(config.bank_name || '').trim(),
-          account_no: String(config.account_no || '').trim(),
-          ifsc_code: String(config.ifsc_code || '').trim().toUpperCase(),
-          branch: String(config.branch || '').trim(),
-          branch_address: String(config.branch_address || '').trim(),
           qr_code_path: String(config.qr_code_path || '').trim()
         }))
         .filter((config) =>
           [
             config.sector_code,
-            config.account_name,
-            config.bank_name,
-            config.account_no,
-            config.ifsc_code,
-            config.branch,
-            config.branch_address,
             config.qr_code_path
           ].some((value) => value.length > 0)
         )
@@ -976,12 +964,12 @@ const Projects: React.FC = () => {
               </div>
             </TabPane>
 
-            <TabPane tab="Sector Payment QR" key="sector-payment">
+            <TabPane tab="Sector QR Configuration" key="sector-payment">
               <div style={{ marginTop: 16 }}>
                 <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                  Configure sector-specific bank and barcode details. Maintenance letters will use
-                  these values by sector and fallback to project bank details if a sector is not
-                  configured.
+                  Configure sector-specific QR codes for payments. Maintenance letters will use 
+                  these QR codes by sector and fallback to the project default QR code if a sector 
+                  is not configured.
                 </Paragraph>
 
                 {editingProjectSummary && editingProjectSummary.sector_codes.length > 0 && (
@@ -989,7 +977,7 @@ const Projects: React.FC = () => {
                     type="info"
                     showIcon
                     message={`Detected sectors: ${editingProjectSummary.sector_codes.join(', ')}`}
-                    description="Add sector rows only where bank account or barcode differs from the project default."
+                    description="Add sector rows only where QR code differs from the project default."
                     style={{ marginBottom: 16 }}
                   />
                 )}
@@ -999,7 +987,7 @@ const Projects: React.FC = () => {
                     <Card
                       key={`sector-config-${index}`}
                       size="small"
-                      title={`Sector Config ${index + 1}`}
+                      title={`Sector QR Config ${index + 1}`}
                       extra={
                         <Button
                           size="small"
@@ -1024,47 +1012,6 @@ const Projects: React.FC = () => {
                             handleSectorConfigChange(index, 'sector_code', e.target.value)
                           }
                           placeholder="Sector Code (A/B/C)"
-                        />
-                        <Input
-                          value={String(config.account_name || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'account_name', e.target.value)
-                          }
-                          placeholder="Account Name"
-                        />
-                        <Input
-                          value={String(config.bank_name || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'bank_name', e.target.value)
-                          }
-                          placeholder="Bank Name"
-                        />
-                        <Input
-                          value={String(config.account_no || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'account_no', e.target.value)
-                          }
-                          placeholder="Account Number"
-                        />
-                        <Input
-                          value={String(config.ifsc_code || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'ifsc_code', e.target.value)
-                          }
-                          placeholder="IFSC Code"
-                        />
-                        <Input
-                          value={String(config.branch || '')}
-                          onChange={(e) => handleSectorConfigChange(index, 'branch', e.target.value)}
-                          placeholder="Branch"
-                        />
-                        <Input
-                          value={String(config.branch_address || '')}
-                          onChange={(e) =>
-                            handleSectorConfigChange(index, 'branch_address', e.target.value)
-                          }
-                          placeholder="Branch Address"
-                          style={{ gridColumn: 'span 2' }}
                         />
                         <div style={{ display: 'flex', gap: 8, gridColumn: 'span 2' }}>
                           <Input

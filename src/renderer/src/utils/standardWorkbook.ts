@@ -276,26 +276,12 @@ export const parseStandardWorkbook = (workbook: WorkbookSheetRows): StandardWork
 
     const sectorConfig: Partial<ProjectSectorPaymentConfig> = {
       sector_code: sectorCode,
-      account_name: text(getValue(row, ['account_name', 'name'])),
-      bank_name: text(getValue(row, ['bank_name', 'bank'])),
-      account_no: text(getValue(row, ['account_no', 'account number'])),
-      ifsc_code: text(getValue(row, ['ifsc_code', 'ifsc'])).toUpperCase(),
-      branch: text(getValue(row, ['branch'])),
-      branch_address: text(getValue(row, ['branch_address'])),
       qr_code_path: text(getValue(row, ['qr_file', 'qr_code_path']))
     }
 
     preview.sector_configs.push(sectorConfig)
 
-    const hasPaymentDetails = [
-      sectorConfig.account_name,
-      sectorConfig.bank_name,
-      sectorConfig.account_no,
-      sectorConfig.ifsc_code,
-      sectorConfig.branch,
-      sectorConfig.branch_address,
-      sectorConfig.qr_code_path
-    ].some((value) => text(value).length > 0)
+    const hasPaymentDetails = text(sectorConfig.qr_code_path).length > 0
 
     if (!hasPaymentDetails) {
       addWarning(
@@ -492,15 +478,7 @@ export const parseStandardWorkbook = (workbook: WorkbookSheetRows): StandardWork
       preview.project.qr_code_path
     ].some((value) => text(value).length > 0)
     const hasSectorPaymentDetails = preview.sector_configs.some((config) =>
-      [
-        config.account_name,
-        config.bank_name,
-        config.account_no,
-        config.ifsc_code,
-        config.branch,
-        config.branch_address,
-        config.qr_code_path
-      ].some((value) => text(value).length > 0)
+      text(config.qr_code_path).length > 0
     )
 
     if (!hasDefaultPaymentDetails && !hasSectorPaymentDetails) {

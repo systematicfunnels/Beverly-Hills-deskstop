@@ -91,12 +91,6 @@ export interface ProjectSectorPaymentConfig {
   id?: number
   project_id: number
   sector_code: string
-  account_name?: string
-  bank_name?: string
-  account_no?: string
-  ifsc_code?: string
-  branch?: string
-  branch_address?: string
   qr_code_path?: string
   created_at?: string
   updated_at?: string
@@ -189,4 +183,177 @@ export interface LetterAddOn {
   addon_name: string
   addon_amount: number
   remarks?: string
+}
+
+export interface ArrearsEntry {
+  financial_year: string
+  amount: number
+  penalty: number
+  total_with_penalty: number
+}
+
+export interface ChargeEntry {
+  description: string
+  amount: number
+}
+
+export interface LetterCalculation {
+  unit_details: {
+    unit_number: string
+    owner_name: string
+    plot_area: number
+    rate_per_sqft: number
+  }
+  arrears_breakdown: ArrearsEntry[]
+  current_year_charges: {
+    base_amount: number
+    na_tax: number
+    solar_contribution: number
+    cable_charges: number
+  }
+  charges_breakdown: ChargeEntry[]
+  totals: {
+    total_arrears_with_penalty: number
+    total_current_charges: number
+    grand_total_before_discount: number
+    early_payment_discount: number
+    amount_payable_before_due: number
+    amount_payable_after_due: number
+  }
+  bank_details: {
+    name: string
+    account_no: string
+    ifsc_code: string
+    bank_name: string
+    branch: string
+    branch_address: string
+    qr_code_path: string
+  }
+}
+
+export interface DetailedLettersAPI {
+  generateLetter: (projectId: number, unitId: number, financialYear: string) => Promise<LetterCalculation>
+  generatePdf: (projectId: number, unitId: number, financialYear: string) => Promise<string>
+}
+
+// Extend the main API interface to include detailedLetters
+declare global {
+  interface Window {
+    api: {
+      projects: {
+        getAll: () => Promise<Project[]>
+        getById: (id: number) => Promise<Project | undefined>
+        getSetupSummary: (projectId: number, financialYear?: string) => Promise<ProjectSetupSummary>
+        getSetupSummaries: (financialYear?: string) => Promise<ProjectSetupSummary[]>
+        create: (project: Project) => Promise<number>
+        update: (id: number, project: Partial<Project>) => Promise<boolean>
+        getSectorPaymentConfigs: (projectId: number) => Promise<ProjectSectorPaymentConfig[]>
+        saveSectorPaymentConfigs: (
+          projectId: number,
+          configs: Partial<ProjectSectorPaymentConfig>[]
+        ) => Promise<boolean>
+        importStandardWorkbookProject: (payload: StandardWorkbookProjectImportPayload) => Promise<StandardWorkbookProjectImportResult>
+        delete: (id: number) => Promise<boolean>
+        bulkDelete: (ids: number[]) => Promise<boolean>
+        getDashboardStats: (
+          projectId?: number,
+          financialYear?: string,
+          unitType?: string,
+          status?: string
+        ) => Promise<{
+          projects: number
+          units: number
+          pendingUnits: number
+          collectedThisYear: number
+          totalBilled: number
+          totalOutstanding: number
+        }>
+      }
+      units: {
+        getAll: () => Promise<Unit[]>
+        getByProject: (projectId: number) => Promise<Unit[]>
+        create: (unit: Unit) => Promise<number>
+        update: (id: number, unit: Partial<Unit>) => Promise<boolean>
+        delete: (id: number) => Promise<boolean>
+        bulkDelete: (ids: number[]) => Promise<boolean>
+        bulkCreate: (units: Unit[]) => Promise<boolean>
+        importLedger: (params: { projectId: number; rows: Record<string, unknown>[] }) => Promise<boolean>
+      }
+      letters: {
+        getAll: () => Promise<MaintenanceLetter[]>
+        getById: (id: number) => Promise<MaintenanceLetter | undefined>
+        createBatch: (params: {
+          projectId: number
+          unitIds?: number[]
+          financialYear: string
+          letterDate: string
+          dueDate: string
+          addOns?: { addon_name: string; addon_amount: number }[]
+        }) => Promise<boolean>
+        delete: (id: number) => Promise<boolean>
+        bulkDelete: (ids: number[]) => Promise<boolean>
+        generatePdf: (id: number) => Promise<string>
+        getAddOns: (id: number) => Promise<LetterAddOn[]>
+        getAllAddOns: () => Promise<(LetterAddOn & {
+          unit_id: number
+          financial_year: string
+          unit_number?: string
+          owner_name?: string
+          project_id?: number
+        })[]>
+        addAddOn: (params: {
+          unit_id: number
+          financial_year: string
+          addon_name: string
+          addon_amount: number
+          remarks?: string
+        }) => Promise<boolean>
+        deleteAddOn: (id: number) => Promise<boolean>
+      }
+      rates: {
+        getAll: () => Promise<MaintenanceRate[]>
+        getByProject: (projectId: number) => Promise<MaintenanceRate[]>
+        create: (rate: MaintenanceRate) => Promise<number>
+        update: (id: number, rate: Partial<MaintenanceRate>) => Promise<boolean>
+        delete: (id: number) => Promise<boolean>
+        getSlabs: (rateId: number) => Promise<MaintenanceSlab[]>
+        addSlab: (slab: MaintenanceSlab) => Promise<number>
+        deleteSlab: (id: number) => Promise<boolean>
+      }
+      payments: {
+        getAll: () => Promise<Payment[]>
+        create: (payment: Payment) => Promise<number>
+        delete: (id: number) => Promise<boolean>
+        bulkDelete: (ids: number[]) => Promise<boolean>
+        generateReceiptPdf: (id: number) => Promise<string>
+      }
+      shell: {
+        showItemInFolder: (path: string) => void
+      }
+      dialog: {
+        selectFile: (options: {
+          title?: string
+          filters?: { name: string; extensions: string[] }[]
+        }) => Promise<string | null>
+      }
+      database: {
+        repair: () => Promise<{
+          success: boolean
+          violations: {
+            table: string
+            rowid: number
+            parent: string
+            fkid: number
+          }[]
+          logs: string[]
+        }>
+      }
+      settings: {
+        getAll: () => Promise<unknown[]>
+        update: (key: string, value: string) => Promise<unknown>
+        delete: (key: string) => Promise<unknown>
+      }
+      detailedLetters: DetailedLettersAPI
+    }
+  }
 }

@@ -9,7 +9,8 @@ import {
   Unit,
   MaintenanceRate,
   MaintenanceSlab,
-  Payment
+  Payment,
+  LetterCalculation
 } from './types'
 
 export * from './types'
@@ -115,6 +116,12 @@ const api = {
     getAll: () => ipcRenderer.invoke('get-settings'),
     update: (key: string, value: string) => ipcRenderer.invoke('update-setting', key, value),
     delete: (key: string) => ipcRenderer.invoke('delete-setting', key)
+  },
+  detailedLetters: {
+    generateLetter: (projectId: number, unitId: number, financialYear: string) =>
+      ipcRenderer.invoke('generate-detailed-letter', projectId, unitId, financialYear) as Promise<LetterCalculation>,
+    generatePdf: (projectId: number, unitId: number, financialYear: string) =>
+      ipcRenderer.invoke('generate-detailed-pdf', projectId, unitId, financialYear) as Promise<string>
   }
 }
 

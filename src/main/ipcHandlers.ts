@@ -16,6 +16,10 @@ import {
   MaintenanceRate,
   MaintenanceSlab
 } from './services/MaintenanceRateService'
+import {
+  detailedMaintenanceLetterService,
+  LetterCalculation
+} from './services/DetailedMaintenanceLetterService'
 
 const isPositiveInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0
@@ -118,12 +122,6 @@ export function registerIpcHandlers(): void {
       for (const config of configs) {
         const hasAnyValue = [
           config.sector_code,
-          config.account_name,
-          config.bank_name,
-          config.account_no,
-          config.ifsc_code,
-          config.branch,
-          config.branch_address,
           config.qr_code_path
         ].some((value) => sanitizeText(value).length > 0)
         if (!hasAnyValue) continue
@@ -291,6 +289,39 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('delete-letter-addon', (_, id: number): boolean => {
     return maintenanceLetterService.deleteAddOn(id)
   })
+
+  // Detailed Maintenance Letters
+  ipcMain.handle(
+    'generate-detailed-letter',
+    async (_, projectId: number, unitId: number, financialYear: string): Promise<LetterCalculation> => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      if (!isPositiveInteger(unitId)) {
+        throw new Error('Invalid unit selected')
+      }
+      if (!isFinancialYear(financialYear)) {
+        throw new Error('Invalid financial year format (expected YYYY-YY)')
+      }
+      return await detailedMaintenanceLetterService.generateDetailedLetter(projectId, unitId, financialYear)
+    }
+  )
+
+  ipcMain.handle(
+    'generate-detailed-pdf',
+    async (_, projectId: number, unitId: number, financialYear: string): Promise<string> => {
+      if (!isPositiveInteger(projectId)) {
+        throw new Error('Invalid project selected')
+      }
+      if (!isPositiveInteger(unitId)) {
+        throw new Error('Invalid unit selected')
+      }
+      if (!isFinancialYear(financialYear)) {
+        throw new Error('Invalid financial year format (expected YYYY-YY)')
+      }
+      return await detailedMaintenanceLetterService.generateDetailedPdf(projectId, unitId, financialYear)
+    }
+  )
 
   ipcMain.handle('open-pdf', (_, filePath: string): void => {
     shell.openPath(filePath)
