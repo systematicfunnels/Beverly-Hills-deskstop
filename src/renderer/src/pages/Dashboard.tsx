@@ -30,6 +30,8 @@ import dayjs from 'dayjs'
 const { Title, Text } = Typography
 const { Option } = Select
 
+const UNIT_TYPE_OPTIONS = ['Plot', 'Bungalow', 'Garden'] as const
+
 interface StatCard {
   title: string
   value: number
@@ -241,7 +243,7 @@ const Dashboard: React.FC = () => {
             >
               {projects.map((p) => (
                 <Option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.project_code ? `${p.project_code} - ${p.name}` : p.name}
                 </Option>
               ))}
             </Select>
@@ -315,8 +317,11 @@ const Dashboard: React.FC = () => {
               value={selectedUnitType}
               disabled={loading}
             >
-              <Option value="Plot">Plot</Option>
-              <Option value="Bungalow">Bungalow</Option>
+              {UNIT_TYPE_OPTIONS.map((unitType) => (
+                <Option key={unitType} value={unitType}>
+                  {unitType}
+                </Option>
+              ))}
             </Select>
           </Space>
           <Space direction="vertical" align="start">

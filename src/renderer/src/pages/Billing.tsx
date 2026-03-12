@@ -42,6 +42,8 @@ import { MaintenanceLetter, Project, LetterAddOn, Unit, ProjectSetupSummary } fr
 
 const { Title, Text } = Typography
 const { Option } = Select
+
+const UNIT_TYPE_OPTIONS = ['All', 'Plot', 'Bungalow', 'Garden'] as const
 const { TabPane } = Tabs
 const { Search } = Input
 
@@ -832,7 +834,7 @@ const Billing: React.FC = () => {
             >
               {projects.map((p) => (
                 <Option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.project_code ? `${p.project_code} - ${p.name}` : p.name}
                 </Option>
               ))}
             </Select>
@@ -882,9 +884,11 @@ const Billing: React.FC = () => {
               onChange={(val) => setSelectedUnitType(val ?? 'All')}
               value={selectedUnitType}
             >
-              <Option value="All">All</Option>
-              <Option value="Plot">Plot</Option>
-              <Option value="Bungalow">Bungalow</Option>
+              {UNIT_TYPE_OPTIONS.map((unitType) => (
+                <Option key={unitType} value={unitType}>
+                  {unitType}
+                </Option>
+              ))}
             </Select>
           </Space>
 
@@ -1121,7 +1125,7 @@ const Billing: React.FC = () => {
                   <Select placeholder="Select a project">
                     {projects.map((p) => (
                       <Option key={p.id} value={p.id}>
-                        {p.name}
+                        {p.project_code ? `${p.project_code} - ${p.name}` : p.name}
                       </Option>
                     ))}
                   </Select>

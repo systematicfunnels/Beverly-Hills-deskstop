@@ -2,6 +2,7 @@ import React from 'react'
 import { HashRouter as Router, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import { ConfigProvider } from 'antd'
+import ErrorBoundary from './components/ErrorBoundary'
 import Projects from './pages/Projects'
 import Units from './pages/Units'
 import Dashboard from './pages/Dashboard'
@@ -41,15 +42,17 @@ const App: React.FC = () => {
     >
       <Router>
         <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/units" element={<Units />} />
-            <Route path="/billing" element={<Billing />} />
-            <Route path="/payments" element={<Payments />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/units" element={<Units />} />
+              <Route path="/billing" element={<Billing />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </ErrorBoundary>
         </Layout>
       </Router>
     </ConfigProvider>

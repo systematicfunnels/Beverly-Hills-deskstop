@@ -4,7 +4,9 @@ import {
   projectService,
   Project,
   ProjectSectorPaymentConfig,
-  ProjectSetupSummary
+  ProjectSetupSummary,
+  StandardWorkbookProjectImportPayload,
+  StandardWorkbookProjectImportResult
 } from './services/ProjectService'
 import { unitService, Unit } from './services/UnitService'
 import { maintenanceLetterService, MaintenanceLetter } from './services/MaintenanceLetterService'
@@ -71,6 +73,22 @@ export function registerIpcHandlers(): void {
     }
     return projectService.create(project)
   })
+
+  ipcMain.handle(
+    'import-standard-workbook-project',
+    (_, payload: StandardWorkbookProjectImportPayload): StandardWorkbookProjectImportResult => {
+      if (!payload || !sanitizeText(payload.project?.name)) {
+        throw new Error('Project name is required for workbook import')
+      }
+      if (!Array.isArray(payload.rows)) {
+        throw new Error('Invalid workbook import rows payload')
+      }
+      if (payload.sector_configs !== undefined && !Array.isArray(payload.sector_configs)) {
+        throw new Error('Invalid workbook sector config payload')
+      }
+      return projectService.importStandardWorkbookProject(payload)
+    }
+  )
 
   ipcMain.handle('update-project', (_, id: number, project: Partial<Project>): boolean => {
     return projectService.update(id, project)
@@ -180,7 +198,7 @@ export function registerIpcHandlers(): void {
     return unitService.bulkCreate(units)
   })
 
-  ipcMain.handle('import-ledger', (_, { projectId, rows }): Promise<boolean> => {
+  ipcMain.handle('import-ledger', (_, { projectId, rows }): boolean => {
     return unitService.importLedger(projectId, rows)
   })
 

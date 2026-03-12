@@ -35,6 +35,13 @@ const { Title, Text, Paragraph } = Typography
 const { Option } = Select
 const { Search } = Input
 
+const UNIT_TYPE_OPTIONS = ['Plot', 'Bungalow', 'Garden'] as const
+const UNIT_TYPE_TAG_COLORS: Record<string, string> = {
+  Plot: 'green',
+  Bungalow: 'blue',
+  Garden: 'gold'
+}
+
 interface ImportUnitPreview extends Unit {
   previewId: string
   [key: string]: unknown
@@ -182,7 +189,7 @@ const Units: React.FC = () => {
     (id: number | null) => {
       if (!id) return ''
       const project = projects.find((p) => p.id === id)
-      return project?.name || ''
+      return project ? `${project.project_code || 'PRJ'} - ${project.name}` : ''
     },
     [projects]
   )
@@ -864,8 +871,9 @@ const Units: React.FC = () => {
       key: 'unit_type',
       sorter: (a: Unit, b: Unit) => (a.unit_type || '').localeCompare(b.unit_type || ''),
       render: (type: string) => {
-        const color = type === 'Bungalow' ? 'blue' : 'green'
-        return <Tag color={color}>{type || 'Plot'}</Tag>
+        const label = type || 'Plot'
+        const color = UNIT_TYPE_TAG_COLORS[label] || 'default'
+        return <Tag color={color}>{label}</Tag>
       }
     },
     {
@@ -1046,8 +1054,11 @@ const Units: React.FC = () => {
               onChange={setSelectedUnitType}
               value={selectedUnitType}
             >
-              <Option value="Plot">Plot</Option>
-              <Option value="Bungalow">Bungalow</Option>
+              {UNIT_TYPE_OPTIONS.map((unitType) => (
+                <Option key={unitType} value={unitType}>
+                  {unitType}
+                </Option>
+              ))}
             </Select>
 
             {/* Area range with validation */}
@@ -1222,7 +1233,7 @@ const Units: React.FC = () => {
                 >
                   {projects.map((p) => (
                     <Option key={p.id} value={p.id}>
-                      {p.name}
+                      {p.project_code ? `${p.project_code} - ${p.name}` : p.name}
                     </Option>
                   ))}
                 </Select>
@@ -1425,8 +1436,11 @@ const Units: React.FC = () => {
                           style={{ width: '100%', minWidth: '80px' }}
                           dropdownMatchSelectWidth={false}
                         >
-                          <Option value="Plot">Plot</Option>
-                          <Option value="Bungalow">Bungalow</Option>
+                          {UNIT_TYPE_OPTIONS.map((unitType) => (
+                            <Option key={unitType} value={unitType}>
+                              {unitType}
+                            </Option>
+                          ))}
                         </Select>
                       ),
                       responsive: ['sm']
@@ -1593,7 +1607,7 @@ const Units: React.FC = () => {
               <Select>
                 {projects.map((s) => (
                   <Select.Option key={s.id} value={s.id}>
-                    {s.name}
+                    {s.project_code ? `${s.project_code} - ${s.name}` : s.name}
                   </Select.Option>
                 ))}
               </Select>
@@ -1606,8 +1620,11 @@ const Units: React.FC = () => {
             </Form.Item>
             <Form.Item name="unit_type" label="Unit Type" rules={[{ required: true }]}>
               <Select>
-                <Option value="Plot">Plot</Option>
-                <Option value="Bungalow">Bungalow</Option>
+                {UNIT_TYPE_OPTIONS.map((unitType) => (
+                  <Option key={unitType} value={unitType}>
+                    {unitType}
+                  </Option>
+                ))}
               </Select>
             </Form.Item>
             <Form.Item name="area_sqft" label="Area (sqft)" rules={[{ required: true }]}>

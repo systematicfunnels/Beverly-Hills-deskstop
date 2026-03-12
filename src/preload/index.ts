@@ -4,6 +4,8 @@ import {
   Project,
   ProjectSetupSummary,
   ProjectSectorPaymentConfig,
+  StandardWorkbookProjectImportPayload,
+  StandardWorkbookProjectImportResult,
   Unit,
   MaintenanceRate,
   MaintenanceSlab,
@@ -32,6 +34,8 @@ const api = {
       projectId: number,
       configs: Partial<ProjectSectorPaymentConfig>[]
     ) => ipcRenderer.invoke('save-project-sector-configs', projectId, configs),
+    importStandardWorkbookProject: (payload: StandardWorkbookProjectImportPayload) =>
+      ipcRenderer.invoke('import-standard-workbook-project', payload) as Promise<StandardWorkbookProjectImportResult>,
     delete: (id: number) => ipcRenderer.invoke('delete-project', id),
     bulkDelete: (ids: number[]) => ipcRenderer.invoke('bulk-delete-projects', ids),
     getDashboardStats: (

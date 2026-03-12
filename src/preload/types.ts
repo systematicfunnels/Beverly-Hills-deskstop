@@ -1,5 +1,6 @@
 export interface Project {
   id?: number
+  project_code?: string
   name: string
   address?: string
   city?: string
@@ -99,6 +100,50 @@ export interface ProjectSectorPaymentConfig {
   qr_code_path?: string
   created_at?: string
   updated_at?: string
+}
+
+export interface StandardWorkbookImportAddOn {
+  name: string
+  amount: number
+}
+
+export interface StandardWorkbookImportYear {
+  financial_year: string
+  base_amount: number
+  arrears?: number
+  discount_amount?: number
+  final_amount?: number
+  due_date?: string
+  add_ons?: StandardWorkbookImportAddOn[]
+}
+
+export interface StandardWorkbookImportRow {
+  unit_number: string
+  sector_code?: string
+  owner_name?: string
+  area_sqft?: number
+  unit_type?: string
+  status?: string
+  contact_number?: string
+  email?: string
+  penalty?: number
+  years?: StandardWorkbookImportYear[]
+}
+
+export interface StandardWorkbookProjectImportPayload {
+  project: Project
+  sector_configs?: Partial<ProjectSectorPaymentConfig>[]
+  rows: StandardWorkbookImportRow[]
+}
+
+export interface StandardWorkbookProjectImportResult {
+  project_id: number
+  project_code: string
+  project_name: string
+  created: boolean
+  imported_units: number
+  imported_letters: number
+  sector_configs_merged: boolean
 }
 
 export interface MaintenanceSlab {

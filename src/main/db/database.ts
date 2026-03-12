@@ -6,6 +6,52 @@ import { schema } from './schema'
 class DatabaseService {
   private db: Database.Database
 
+  private formatProjectCode(sequenceNumber: number): string {
+    return `PRJ-${String(sequenceNumber).padStart(3, '0')}`
+  }
+
+  private ensureProjectCodes(): void {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT id, project_code
+        FROM projects
+        ORDER BY id ASC
+      `
+      )
+      .all() as { id: number; project_code: string | null }[]
+
+    const usedCodes = new Set<string>()
+    let nextSequence = 1
+
+    for (const row of rows) {
+      const normalizedCode = typeof row.project_code === 'string' ? row.project_code.trim().toUpperCase() : ''
+      if (normalizedCode) {
+        usedCodes.add(normalizedCode)
+        const match = normalizedCode.match(/^PRJ-(\d+)$/)
+        if (match) {
+          nextSequence = Math.max(nextSequence, Number(match[1]) + 1)
+        }
+      }
+    }
+
+    const updateStatement = this.db.prepare('UPDATE projects SET project_code = ? WHERE id = ?')
+    for (const row of rows) {
+      const normalizedCode = typeof row.project_code === 'string' ? row.project_code.trim().toUpperCase() : ''
+      if (normalizedCode) continue
+
+      let candidate = this.formatProjectCode(nextSequence)
+      while (usedCodes.has(candidate)) {
+        nextSequence += 1
+        candidate = this.formatProjectCode(nextSequence)
+      }
+
+      updateStatement.run(candidate, row.id)
+      usedCodes.add(candidate)
+      nextSequence += 1
+    }
+  }
+
   constructor() {
     const dbPath = app.isPackaged
       ? path.join(app.getPath('userData'), 'beverly-hills.db')
@@ -261,10 +307,14 @@ class DatabaseService {
           this.db.exec('ALTER TABLE projects ADD COLUMN branch TEXT')
         if (!columns.some((c) => c.name === 'branch_address'))
           this.db.exec('ALTER TABLE projects ADD COLUMN branch_address TEXT')
+        if (!columns.some((c) => c.name === 'project_code'))
+          this.db.exec('ALTER TABLE projects ADD COLUMN project_code TEXT')
         if (!columns.some((c) => c.name === 'template_type'))
           this.db.exec("ALTER TABLE projects ADD COLUMN template_type TEXT DEFAULT 'standard'")
         if (!columns.some((c) => c.name === 'import_profile_key'))
           this.db.exec('ALTER TABLE projects ADD COLUMN import_profile_key TEXT')
+        this.ensureProjectCodes()
+        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_project_code ON projects(project_code)')
       }
 
       // 2.1 Ensure maintenance_rates table has new columns
@@ -561,14 +611,68 @@ class DatabaseService {
   }
 
   public query<T>(sql: string, params: unknown[] = []): T[] {
+    // Input validation to prevent SQL injection
+    if (!sql || typeof sql !== 'string') {
+      throw new Error('Invalid SQL query provided')
+    }
+    // Basic SQL injection prevention - ensure no dangerous keywords in SELECT queries
+    const normalizedSql = sql.trim().toLowerCase()
+    if (normalizedSql.includes('drop ') || 
+        normalizedSql.includes('delete ') || 
+        normalizedSql.includes('update ') ||
+        normalizedSql.includes('insert ') ||
+        normalizedSql.includes('alter ') ||
+        normalizedSql.includes('create ') ||
+        normalizedSql.includes('truncate ')) {
+      // For DML/DDL operations, ensure they are parameterized
+      if (params.length === 0 && sql.includes('${')) {
+        throw new Error('Dynamic SQL with template literals detected - use parameterized queries instead')
+      }
+    }
     return this.db.prepare(sql).all(...params) as T[]
   }
 
   public get<T>(sql: string, params: unknown[] = []): T | undefined {
+    // Input validation to prevent SQL injection
+    if (!sql || typeof sql !== 'string') {
+      throw new Error('Invalid SQL query provided')
+    }
+    // Basic SQL injection prevention - ensure no dangerous keywords in SELECT queries
+    const normalizedSql = sql.trim().toLowerCase()
+    if (normalizedSql.includes('drop ') || 
+        normalizedSql.includes('delete ') || 
+        normalizedSql.includes('update ') ||
+        normalizedSql.includes('insert ') ||
+        normalizedSql.includes('alter ') ||
+        normalizedSql.includes('create ') ||
+        normalizedSql.includes('truncate ')) {
+      // For DML/DDL operations, ensure they are parameterized
+      if (params.length === 0 && sql.includes('${')) {
+        throw new Error('Dynamic SQL with template literals detected - use parameterized queries instead')
+      }
+    }
     return this.db.prepare(sql).get(...params) as T | undefined
   }
 
   public run(sql: string, params: unknown[] = []): Database.RunResult {
+    // Input validation to prevent SQL injection
+    if (!sql || typeof sql !== 'string') {
+      throw new Error('Invalid SQL query provided')
+    }
+    // Basic SQL injection prevention - ensure no dangerous keywords in SELECT queries
+    const normalizedSql = sql.trim().toLowerCase()
+    if (normalizedSql.includes('drop ') || 
+        normalizedSql.includes('delete ') || 
+        normalizedSql.includes('update ') ||
+        normalizedSql.includes('insert ') ||
+        normalizedSql.includes('alter ') ||
+        normalizedSql.includes('create ') ||
+        normalizedSql.includes('truncate ')) {
+      // For DML/DDL operations, ensure they are parameterized
+      if (params.length === 0 && sql.includes('${')) {
+        throw new Error('Dynamic SQL with template literals detected - use parameterized queries instead')
+      }
+    }
     return this.db.prepare(sql).run(...params)
   }
 

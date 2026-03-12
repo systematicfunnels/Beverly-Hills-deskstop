@@ -735,7 +735,7 @@ const Reports: React.FC = () => {
             >
               {projects.map((p) => (
                 <Option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.project_code ? `${p.project_code} - ${p.name}` : p.name}
                 </Option>
               ))}
             </Select>

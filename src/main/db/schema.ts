@@ -1,6 +1,7 @@
 export const schema = `
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_code TEXT UNIQUE,
   name TEXT NOT NULL,
   location TEXT, -- Aligned with ER
   total_units INTEGER, -- Aligned with ER

@@ -29,9 +29,15 @@ import {
   CheckCircleOutlined,
   WarningOutlined
 } from '@ant-design/icons'
-import { Project, ProjectSectorPaymentConfig, ProjectSetupSummary } from '@preload/types'
-import { readExcelFile } from '../utils/excelReader'
+import {
+  Project,
+  ProjectSectorPaymentConfig,
+  ProjectSetupSummary,
+  StandardWorkbookProjectImportResult
+} from '@preload/types'
+import { readExcelWorkbook } from '../utils/excelReader'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
+import { parseStandardWorkbook, StandardWorkbookParseResult } from '../utils/standardWorkbook'
 
 const { Option } = Select
 const { TabPane } = Tabs
@@ -110,8 +116,13 @@ const Projects: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [cityFilter, setCityFilter] = useState<string | null>(null)
 
-  // Import summary state
-  const [importSummary, setImportSummary] = useState<Partial<Project>[]>([])
+  const [standardWorkbookPreview, setStandardWorkbookPreview] = useState<StandardWorkbookParseResult | null>(
+    null
+  )
+  const [isWorkbookPreviewOpen, setIsWorkbookPreviewOpen] = useState(false)
+  const [isWorkbookImporting, setIsWorkbookImporting] = useState(false)
+  const [workbookFileName, setWorkbookFileName] = useState('')
+  const [importResults, setImportResults] = useState<StandardWorkbookProjectImportResult[]>([])
   const [showImportSummary, setShowImportSummary] = useState(false)
   const [sectorConfigs, setSectorConfigs] = useState<Partial<ProjectSectorPaymentConfig>[]>(
     getDefaultSectorConfigs()
@@ -171,6 +182,10 @@ const Projects: React.FC = () => {
     return Array.from(new Set(projects.map((p) => p.city).filter(Boolean))).sort()
   }, [projects])
 
+  const existingProjectNameSet = useMemo(() => {
+    return new Set(projects.map((project) => project.name.trim().toLowerCase()))
+  }, [projects])
+
   // Check if any filters are active
   const hasActiveFilters = useMemo(() => {
     return searchText || statusFilter || cityFilter
@@ -188,6 +203,7 @@ const Projects: React.FC = () => {
     return projects.filter((p) => {
       const matchesSearch =
         !searchText ||
+        (p.project_code || '').toLowerCase().includes(searchText.toLowerCase()) ||
         p.name.toLowerCase().includes(searchText.toLowerCase()) ||
         p.address?.toLowerCase().includes(searchText.toLowerCase()) ||
         p.city?.toLowerCase().includes(searchText.toLowerCase())
@@ -285,144 +301,46 @@ const Projects: React.FC = () => {
     setSectorConfigs((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
   }
 
-  const handleImport = async (file: File): Promise<boolean> => {
+  const closeWorkbookPreview = (force: boolean = false): void => {
+    if (isWorkbookImporting && !force) return
+    setIsWorkbookPreviewOpen(false)
+    setStandardWorkbookPreview(null)
+    setWorkbookFileName('')
+  }
+
+  const handleStandardWorkbookImport = async (file: File): Promise<boolean> => {
     try {
-      message.loading({ content: 'Reading Excel file...', key: 'excel_read' })
-      const jsonData = await readExcelFile(file)
+      setImportResults([])
+      setShowImportSummary(false)
+      message.loading({ content: 'Reading standard workbook...', key: 'excel_read' })
+      const workbook = await readExcelWorkbook(file)
+      const parsedWorkbook = parseStandardWorkbook(workbook)
 
-      if (jsonData.length === 0) {
-        message.warning({ content: 'No data found in the Excel file', key: 'excel_read' })
+      if (parsedWorkbook.projects.length === 0) {
+        const blockerText =
+          parsedWorkbook.workbook_blockers.length > 0
+            ? parsedWorkbook.workbook_blockers[0]
+            : 'No project data found in the workbook.'
+        message.warning({ content: blockerText, key: 'excel_read', duration: 5 })
         return false
       }
 
-      message.success({ content: 'Excel file read successfully', key: 'excel_read' })
+      setWorkbookFileName(file.name)
+      setStandardWorkbookPreview(parsedWorkbook)
+      setIsWorkbookPreviewOpen(true)
 
-      const projectsToImport = jsonData
-        .map((row) => {
-          const normalizedRow: Record<string, unknown> = {}
-          Object.keys(row).forEach((key) => {
-            normalizedRow[String(key).toLowerCase().trim()] = row[key]
-          })
-
-          const getValue = (keys: string[]): unknown => {
-            for (const key of keys) {
-              if (
-                normalizedRow[key] !== undefined &&
-                normalizedRow[key] !== null &&
-                String(normalizedRow[key]).trim() !== ''
-              ) {
-                return normalizedRow[key]
-              }
-            }
-            return undefined
-          }
-
-          const name = String(
-            getValue([
-              'name',
-              'project name',
-              'project',
-              'building',
-              'building name',
-              'society',
-              'society name'
-            ]) || ''
-          ).trim()
-
-          if (!name) return null
-
-          return {
-            name,
-            address: String(getValue(['address', 'location', 'site address']) || '').trim(),
-            city: String(getValue(['city', 'town', 'village']) || 'Bhiwandi').trim(),
-            state: String(getValue(['state', 'region']) || '').trim(),
-            pincode: String(getValue(['pincode', 'pin', 'zip', 'zipcode']) || '').trim(),
-            status: 'Active',
-            bank_name: String(
-              getValue(['bank', 'bank name', 'bank_name', 'bank details']) || ''
-            ).trim(),
-            account_no: String(
-              getValue(['account', 'account no', 'account number', 'acc no', 'a/c no']) || ''
-            ).trim(),
-            ifsc_code: String(getValue(['ifsc', 'ifsc code', 'ifsc_code']) || '').trim()
-          }
+      if (parsedWorkbook.workbook_blockers.length > 0) {
+        message.warning({
+          content: 'Workbook parsed with blockers. Review them before importing.',
+          key: 'excel_read',
+          duration: 5
         })
-        .filter((p) => p !== null) as Partial<Project>[]
-
-      if (projectsToImport.length === 0) {
-        message.warning(
-          'No valid projects found in the Excel file. Ensure there is a "Name" column.'
-        )
-        return false
+      } else {
+        message.success({
+          content: `Workbook parsed successfully. ${parsedWorkbook.projects.length} project(s) ready for review.`,
+          key: 'excel_read'
+        })
       }
-
-      setImportSummary(projectsToImport)
-
-      Modal.confirm({
-        title: `Import ${projectsToImport.length} projects?`,
-        content: (
-          <div>
-            <p>This will add new projects to the database.</p>
-            {projectsToImport.length <= 5 && (
-              <div style={{ marginTop: 8 }}>
-                <Text type="secondary">Projects to import:</Text>
-                <ul style={{ margin: '4px 0 0 20px', fontSize: '12px' }}>
-                  {projectsToImport.map((p, idx) => (
-                    <li key={idx}>{p.name}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {projectsToImport.length > 5 && (
-              <div style={{ marginTop: 8 }}>
-                <Text type="secondary">
-                  Showing 5 of {projectsToImport.length} projects to import
-                </Text>
-                <ul style={{ margin: '4px 0 0 20px', fontSize: '12px' }}>
-                  {projectsToImport.slice(0, 5).map((p, idx) => (
-                    <li key={idx}>{p.name}</li>
-                  ))}
-                  <li>...and {projectsToImport.length - 5} more</li>
-                </ul>
-              </div>
-            )}
-          </div>
-        ),
-        onOk: async () => {
-          setLoading(true)
-          try {
-            let count = 0
-            for (const project of projectsToImport) {
-              await window.api.projects.create(project as Project)
-              count++
-            }
-
-            message.success({
-              content: (
-                <span>
-                  Successfully imported {count} projects.{' '}
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => setShowImportSummary(true)}
-                    style={{ padding: 0, height: 'auto' }}
-                  >
-                    View details
-                  </Button>
-                </span>
-              ),
-              duration: 5
-            })
-
-            fetchProjects()
-          } catch (error) {
-            message.error('Failed to import some projects')
-            console.error(error)
-          } finally {
-            setLoading(false)
-          }
-        }
-      })
     } catch (error) {
       console.error('Error reading Excel file:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -433,6 +351,46 @@ const Projects: React.FC = () => {
       })
     }
     return false
+  }
+
+  const executeStandardWorkbookImport = async (): Promise<void> => {
+    if (!standardWorkbookPreview) return
+    if (standardWorkbookPreview.workbook_blockers.length > 0) {
+      message.error('Resolve workbook blockers before importing.')
+      return
+    }
+
+    setIsWorkbookImporting(true)
+    try {
+      const results: StandardWorkbookProjectImportResult[] = []
+      for (const projectPreview of standardWorkbookPreview.projects) {
+        const result = await window.api.projects.importStandardWorkbookProject({
+          project: projectPreview.project,
+          sector_configs: projectPreview.sector_configs,
+          rows: projectPreview.rows
+        })
+        results.push(result)
+      }
+
+      const importedProjects = results.length
+      const importedUnits = results.reduce((sum, result) => sum + result.imported_units, 0)
+      const importedLetters = results.reduce((sum, result) => sum + result.imported_letters, 0)
+
+      setImportResults(results)
+      setShowImportSummary(true)
+      closeWorkbookPreview(true)
+      await fetchProjects()
+
+      message.success(
+        `Imported ${importedProjects} project(s), ${importedUnits} unit row(s), and ${importedLetters} maintenance ledger row(s).`
+      )
+    } catch (error) {
+      console.error('Workbook import failed:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      message.error(`Workbook import failed: ${errorMessage}`)
+    } finally {
+      setIsWorkbookImporting(false)
+    }
   }
 
   const handleEdit = async (record: Project): Promise<void> => {
@@ -595,11 +553,12 @@ const Projects: React.FC = () => {
 
   const columns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
-      align: 'center' as const
+      title: 'Code',
+      dataIndex: 'project_code',
+      key: 'project_code',
+      width: 110,
+      align: 'center' as const,
+      render: (projectCode: string, record: Project) => projectCode || `PRJ-${String(record.id || '').padStart(3, '0')}`
     },
     {
       title: 'Name',
@@ -720,12 +679,14 @@ const Projects: React.FC = () => {
               </Button>
             )}
             <Upload
-              disabled
-              beforeUpload={handleImport}
+              beforeUpload={(file) => {
+                void handleStandardWorkbookImport(file)
+                return false
+              }}
               showUploadList={false}
-              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
             >
-              <Button icon={<UploadOutlined />} disabled>Import Excel</Button>
+              <Button icon={<UploadOutlined />}>Import Standard Workbook</Button>
             </Upload>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
               Add Project
@@ -735,7 +696,7 @@ const Projects: React.FC = () => {
 
         <Space wrap style={{ marginBottom: 8 }}>
           <Input
-            placeholder="Search Project Name, Address, or City..."
+            placeholder="Search Project Code, Name, Address, or City..."
             prefix={<SearchOutlined />}
             style={{ width: 250 }}
             allowClear
@@ -884,6 +845,13 @@ const Projects: React.FC = () => {
                   marginTop: 16
                 }}
               >
+                <Form.Item label="Project Code">
+                  <Input
+                    value={editingProject?.project_code || 'Auto-generated on save'}
+                    disabled
+                  />
+                </Form.Item>
+
                 <Form.Item
                   name="name"
                   label="Project Name"
@@ -1127,6 +1095,125 @@ const Projects: React.FC = () => {
         </Form>
       </Modal>
 
+      <Modal
+        title={workbookFileName ? `Import Standard Workbook: ${workbookFileName}` : 'Import Standard Workbook'}
+        open={isWorkbookPreviewOpen}
+        onCancel={() => closeWorkbookPreview()}
+        onOk={() => void executeStandardWorkbookImport()}
+        okText="Import Workbook"
+        okButtonProps={{
+          disabled:
+            !standardWorkbookPreview ||
+            standardWorkbookPreview.projects.length === 0 ||
+            standardWorkbookPreview.workbook_blockers.length > 0
+        }}
+        confirmLoading={isWorkbookImporting}
+        width={860}
+      >
+        {standardWorkbookPreview && (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Alert
+              type={
+                standardWorkbookPreview.workbook_blockers.length > 0
+                  ? 'error'
+                  : standardWorkbookPreview.workbook_warnings.length > 0
+                    ? 'warning'
+                    : 'success'
+              }
+              showIcon
+              message={
+                standardWorkbookPreview.workbook_blockers.length > 0
+                  ? 'Workbook has blockers and cannot be imported yet.'
+                  : standardWorkbookPreview.workbook_warnings.length > 0
+                    ? 'Workbook is importable but has warnings to review.'
+                    : 'Workbook is ready to import.'
+              }
+              description={
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    Projects: {standardWorkbookPreview.projects.length}
+                    {' | '}Workbook warnings: {standardWorkbookPreview.workbook_warnings.length}
+                    {' | '}Workbook blockers: {standardWorkbookPreview.workbook_blockers.length}
+                  </div>
+                  {standardWorkbookPreview.workbook_blockers.slice(0, 6).map((blocker) => (
+                    <div key={blocker} style={{ color: '#cf1322' }}>
+                      {blocker}
+                    </div>
+                  ))}
+                  {standardWorkbookPreview.workbook_warnings.slice(0, 4).map((warning) => (
+                    <div key={warning} style={{ color: '#d48806' }}>
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              }
+            />
+
+            <List
+              dataSource={standardWorkbookPreview.projects}
+              renderItem={(projectPreview) => {
+                const importAction = existingProjectNameSet.has(
+                  projectPreview.project.name.trim().toLowerCase()
+                )
+                  ? 'Update Existing'
+                  : 'Create New'
+
+                return (
+                  <List.Item>
+                    <Card
+                      size="small"
+                      title={projectPreview.project.name}
+                      style={{ width: '100%' }}
+                      extra={
+                        <Space>
+                          <Tag color={importAction === 'Create New' ? 'green' : 'blue'}>{importAction}</Tag>
+                          <Tag>
+                            {TEMPLATE_LABELS[projectPreview.project.template_type || 'standard'] ||
+                              'Standard Letter'}
+                          </Tag>
+                          <Tag>
+                            {IMPORT_PROFILE_LABELS[
+                              projectPreview.project.import_profile_key || 'standard_normalized'
+                            ] || 'Standard Platform Sheet'}
+                          </Tag>
+                        </Space>
+                      }
+                    >
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <Text type="secondary">
+                          Units: {projectPreview.unit_count} | Ledger rows: {projectPreview.ledger_row_count} |
+                          Importable letters: {projectPreview.letter_count}
+                        </Text>
+                        <Text type="secondary">
+                          Sectors:{' '}
+                          {projectPreview.sector_codes.length > 0
+                            ? projectPreview.sector_codes.join(', ')
+                            : 'None'}
+                          {' | '}Unit types:{' '}
+                          {projectPreview.unit_types.length > 0
+                            ? projectPreview.unit_types.join(', ')
+                            : 'None'}
+                        </Text>
+                        {projectPreview.blockers.map((blocker) => (
+                          <Text key={blocker} type="danger" style={{ fontSize: 12 }}>
+                            {blocker}
+                          </Text>
+                        ))}
+                        {projectPreview.warnings.slice(0, 4).map((warning) => (
+                          <Text key={warning} style={{ fontSize: 12, color: '#d48806' }}>
+                            {warning}
+                          </Text>
+                        ))}
+                      </div>
+                    </Card>
+                  </List.Item>
+                )
+              }}
+            />
+          </Space>
+        )}
+      </Modal>
+
       {/* Import Summary Modal */}
       <Modal
         title="Import Summary"
@@ -1141,17 +1228,19 @@ const Projects: React.FC = () => {
       >
         <div style={{ maxHeight: '400px', overflow: 'auto' }}>
           <List
-            dataSource={importSummary}
-            renderItem={(project, index) => (
+            dataSource={importResults}
+            renderItem={(result, index) => (
               <List.Item>
                 <List.Item.Meta
-                  title={`${index + 1}. ${project.name}`}
+                  title={`${index + 1}. ${result.project_code || 'PRJ'} - ${result.project_name}`}
                   description={
                     <div>
-                      {project.city && <div>City: {project.city}</div>}
-                      {project.address && <div>Address: {project.address}</div>}
-                      {project.bank_name && <div>Bank: {project.bank_name}</div>}
-                      {project.account_no && <div>Account: {project.account_no}</div>}
+                      <div>Action: {result.created ? 'Created new project' : 'Updated existing project'}</div>
+                      <div>Imported units: {result.imported_units}</div>
+                      <div>Imported maintenance rows: {result.imported_letters}</div>
+                      <div>
+                        Sector payment config: {result.sector_configs_merged ? 'Merged from workbook' : 'No change'}
+                      </div>
                     </div>
                   }
                 />

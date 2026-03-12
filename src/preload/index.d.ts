@@ -3,6 +3,8 @@ import {
   Project,
   ProjectSetupSummary,
   ProjectSectorPaymentConfig,
+  StandardWorkbookProjectImportPayload,
+  StandardWorkbookProjectImportResult,
   Unit,
   MaintenanceLetter,
   MaintenanceRate,
@@ -31,6 +33,9 @@ declare global {
           projectId: number,
           configs: Partial<ProjectSectorPaymentConfig>[]
         ) => Promise<boolean>
+        importStandardWorkbookProject: (
+          payload: StandardWorkbookProjectImportPayload
+        ) => Promise<StandardWorkbookProjectImportResult>
         delete: (id: number) => Promise<boolean>
         bulkDelete: (ids: number[]) => Promise<boolean>
         getDashboardStats: (

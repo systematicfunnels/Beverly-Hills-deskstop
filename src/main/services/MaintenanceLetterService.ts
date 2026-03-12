@@ -179,17 +179,6 @@ class MaintenanceLetterService {
   }
 
   public async generatePdf(letterId: number): Promise<string> {
-    const sectorExpr = `
-      CASE
-        WHEN u.sector_code IS NOT NULL AND TRIM(u.sector_code) <> '' THEN UPPER(TRIM(u.sector_code))
-        WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '-') > 0 THEN
-          UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '-') - 1)))
-        WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '/') > 0 THEN
-          UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '/') - 1)))
-        ELSE ''
-      END
-    `
-
     const letter = dbService.get<MaintenanceLetter>(
       `
       SELECT
@@ -198,7 +187,14 @@ class MaintenanceLetterService {
         u.owner_name,
         p.name as project_name,
         p.letterhead_path,
-        ${sectorExpr} as sector_code,
+        CASE
+          WHEN u.sector_code IS NOT NULL AND TRIM(u.sector_code) <> '' THEN UPPER(TRIM(u.sector_code))
+          WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '-') > 0 THEN
+            UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '-') - 1)))
+          WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '/') > 0 THEN
+            UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '/') - 1)))
+          ELSE ''
+        END as sector_code,
         COALESCE(psc.account_name, p.account_name) as account_name,
         COALESCE(psc.bank_name, p.bank_name) as bank_name,
         COALESCE(psc.account_no, p.account_no) as account_no,
@@ -211,7 +207,14 @@ class MaintenanceLetterService {
       JOIN projects p ON l.project_id = p.id
       LEFT JOIN project_sector_payment_configs psc
         ON psc.project_id = p.id
-       AND UPPER(TRIM(psc.sector_code)) = ${sectorExpr}
+       AND UPPER(TRIM(psc.sector_code)) = CASE
+          WHEN u.sector_code IS NOT NULL AND TRIM(u.sector_code) <> '' THEN UPPER(TRIM(u.sector_code))
+          WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '-') > 0 THEN
+            UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '-') - 1)))
+          WHEN INSTR(TRIM(COALESCE(u.unit_number, '')), '/') > 0 THEN
+            UPPER(TRIM(SUBSTR(TRIM(u.unit_number), 1, INSTR(TRIM(u.unit_number), '/') - 1)))
+          ELSE ''
+        END
       WHERE l.id = ?
     `,
       [letterId]
@@ -447,44 +450,8 @@ class MaintenanceLetterService {
       throw new Error(`Project setup incomplete: ${setupSummary.blockers.join(' ')}`)
     }
 
-    const hasUnitsUnitType = this.ensureUnitsUnitTypeColumn()
+    this.ensureUnitsUnitTypeColumn()
     const hasRatesUnitType = this.ensureMaintenanceRatesUnitTypeColumn()
-    const unitTypeExpr = hasUnitsUnitType
-      ? `
-      CASE
-        WHEN u.unit_type IS NULL OR TRIM(u.unit_type) = '' THEN 'Bungalow'
-        WHEN LOWER(TRIM(u.unit_type)) = 'flat' THEN 'Bungalow'
-        WHEN LOWER(TRIM(u.unit_type)) = 'plot' THEN 'Plot'
-        WHEN LOWER(TRIM(u.unit_type)) = 'bungalow' THEN 'Bungalow'
-        ELSE TRIM(u.unit_type)
-      END
-    `
-      : "'Bungalow'"
-    const rateJoinClause = hasRatesUnitType
-      ? `
-      JOIN maintenance_rates r ON r.id = COALESCE(
-        (
-          SELECT MAX(r2.id)
-          FROM maintenance_rates r2
-          WHERE r2.project_id = u.project_id
-            AND r2.financial_year = ?
-            AND r2.unit_type = ${unitTypeExpr}
-        ),
-        (
-          SELECT MAX(r3.id)
-          FROM maintenance_rates r3
-          WHERE r3.project_id = u.project_id
-            AND r3.financial_year = ?
-            AND r3.unit_type = 'All'
-        )
-      )`
-      : `
-      JOIN maintenance_rates r ON r.id = (
-        SELECT MAX(r2.id)
-        FROM maintenance_rates r2
-        WHERE r2.project_id = u.project_id
-          AND r2.financial_year = ?
-      )`
 
     // 1. Check if the project has units
     let unitFilter = 'WHERE project_id = ?'
@@ -512,13 +479,92 @@ class MaintenanceLetterService {
       )
     }
 
-    let queryFilter = 'WHERE u.project_id = ?'
-    const queryParams: (string | number | undefined | null)[] = hasRatesUnitType
-      ? [financialYear, financialYear, projectId]
-      : [financialYear, projectId]
-    if (unitIds && unitIds.length > 0) {
-      queryFilter += ` AND u.id IN (${unitIds.map(() => '?').join(',')})`
-      queryParams.push(...unitIds)
+    // Build the query based on whether we have unit types
+    let querySql: string
+    let queryParams: (string | number | undefined | null)[]
+
+    if (hasRatesUnitType) {
+      // Complex query with unit type matching
+      let unitFilterClause = 'WHERE u.project_id = ?'
+      const params: (string | number | undefined | null)[] = [projectId]
+      
+      if (unitIds && unitIds.length > 0) {
+        unitFilterClause += ` AND u.id IN (${unitIds.map(() => '?').join(',')})`
+        params.push(...unitIds)
+      }
+
+      querySql = `
+        SELECT
+          u.id,
+          u.area_sqft,
+          r.rate_per_sqft,
+          COALESCE(
+            (
+              SELECT MAX(s.discount_percentage)
+              FROM maintenance_slabs s
+              WHERE s.rate_id = r.id AND s.is_early_payment = 1
+            ),
+            0
+          ) as discount_percentage
+        FROM units u
+        JOIN maintenance_rates r ON r.id = COALESCE(
+          (
+            SELECT MAX(r2.id)
+            FROM maintenance_rates r2
+            WHERE r2.project_id = u.project_id
+              AND r2.financial_year = ?
+              AND r2.unit_type = CASE
+                WHEN u.unit_type IS NULL OR TRIM(u.unit_type) = '' THEN 'Bungalow'
+                WHEN LOWER(TRIM(u.unit_type)) = 'flat' THEN 'Bungalow'
+                WHEN LOWER(TRIM(u.unit_type)) = 'plot' THEN 'Plot'
+                WHEN LOWER(TRIM(u.unit_type)) = 'bungalow' THEN 'Bungalow'
+                ELSE TRIM(u.unit_type)
+              END
+          ),
+          (
+            SELECT MAX(r3.id)
+            FROM maintenance_rates r3
+            WHERE r3.project_id = u.project_id
+              AND r3.financial_year = ?
+              AND r3.unit_type = 'All'
+          )
+        )
+        ${unitFilterClause}
+      `
+      queryParams = [financialYear, financialYear, ...params]
+    } else {
+      // Simple query without unit type matching
+      let unitFilterClause = 'WHERE u.project_id = ?'
+      const params: (string | number | undefined | null)[] = [projectId]
+      
+      if (unitIds && unitIds.length > 0) {
+        unitFilterClause += ` AND u.id IN (${unitIds.map(() => '?').join(',')})`
+        params.push(...unitIds)
+      }
+
+      querySql = `
+        SELECT
+          u.id,
+          u.area_sqft,
+          r.rate_per_sqft,
+          COALESCE(
+            (
+              SELECT MAX(s.discount_percentage)
+              FROM maintenance_slabs s
+              WHERE s.rate_id = r.id AND s.is_early_payment = 1
+            ),
+            0
+          ) as discount_percentage
+        FROM units u
+        JOIN maintenance_rates r ON r.id = (
+          SELECT MAX(r2.id)
+          FROM maintenance_rates r2
+          WHERE r2.project_id = u.project_id
+            AND r2.financial_year = ?
+        )
+        ${unitFilterClause}
+      `
+      queryParams = [financialYear, ...params]
     }
 
     const units = dbService.query<{
@@ -526,26 +572,7 @@ class MaintenanceLetterService {
       area_sqft: number
       rate_per_sqft: number
       discount_percentage?: number
-    }>(
-      `
-      SELECT
-        u.id,
-        u.area_sqft,
-        r.rate_per_sqft,
-        COALESCE(
-          (
-            SELECT MAX(s.discount_percentage)
-            FROM maintenance_slabs s
-            WHERE s.rate_id = r.id AND s.is_early_payment = 1
-          ),
-          0
-        ) as discount_percentage
-      FROM units u
-      ${rateJoinClause}
-      ${queryFilter}
-    `,
-      queryParams
-    )
+    }>(querySql, queryParams)
 
     if (units.length === 0) {
       let rateTypes = 'None'
@@ -565,7 +592,7 @@ class MaintenanceLetterService {
       }
 
       throw new Error(
-        `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types (Plot, Bungalow).`
+        `No units matched the available maintenance rates. Rates found for: ${rateTypes || 'None'}. Please ensure maintenance rates are set for all unit types used in the project (for example Plot, Bungalow, Garden).`
       )
     }
 

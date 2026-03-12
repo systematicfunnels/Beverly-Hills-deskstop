@@ -22,6 +22,50 @@ class UnitService {
     }
   }
 
+  private sanitizeText(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : String(value || '').trim()
+  }
+
+  private normalizeUnitStatus(status: unknown): string {
+    const normalized = this.sanitizeText(status).toLowerCase()
+    if (!normalized || normalized === 'active' || normalized === 'sold' || normalized === 'occupied') {
+      return 'Active'
+    }
+    if (normalized === 'inactive' || normalized === 'unsold') {
+      return 'Inactive'
+    }
+    if (normalized === 'vacant') {
+      return 'Vacant'
+    }
+    return this.sanitizeText(status) || 'Active'
+  }
+
+  private normalizeUnitType(unitType: unknown): string {
+    const normalized = this.sanitizeText(unitType).toLowerCase()
+    if (!normalized || normalized === 'flat' || normalized === 'bungalow') return 'Bungalow'
+    if (normalized === 'plot') return 'Plot'
+    return this.sanitizeText(unitType) || 'Bungalow'
+  }
+
+  private normalizeIsoDate(value: unknown): string | null {
+    const rawValue = this.sanitizeText(value)
+    if (!rawValue) return null
+
+    const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`
+    }
+
+    const slashMatch = rawValue.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+    if (slashMatch) {
+      return `${slashMatch[1]}-${slashMatch[2]}-${slashMatch[3]}`
+    }
+
+    const date = new Date(rawValue)
+    if (Number.isNaN(date.getTime())) return null
+    return date.toISOString().slice(0, 10)
+  }
+
   private extractSectorFromUnitNumber(unitNumber: unknown): string {
     const normalizedUnitNumber = String(unitNumber || '').trim()
     if (!normalizedUnitNumber) return ''
@@ -62,7 +106,7 @@ class UnitService {
                   OR (
                     p.letter_id IS NULL
                     AND p.unit_id = maintenance_letters.unit_id
-                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                    AND COALESCE(p.financial_year, '') = COALESCE(maintenance_letters.financial_year, '')
                   )
              ),
              0
@@ -78,7 +122,7 @@ class UnitService {
                   OR (
                     p.letter_id IS NULL
                     AND p.unit_id = maintenance_letters.unit_id
-                    AND TRIM(COALESCE(p.financial_year, '')) = TRIM(maintenance_letters.financial_year)
+                    AND COALESCE(p.financial_year, '') = COALESCE(maintenance_letters.financial_year, '')
                   )
              ),
              0
@@ -116,12 +160,12 @@ class UnitService {
         unit.project_id,
         unit.unit_number,
         normalizedSectorCode,
-        unit.unit_type || 'Bungalow',
+        this.normalizeUnitType(unit.unit_type),
         unit.area_sqft,
         unit.owner_name,
         unit.contact_number,
         unit.email,
-        unit.status || 'Active',
+        this.normalizeUnitStatus(unit.status),
         unit.penalty || 0
       ]
     )
@@ -136,6 +180,12 @@ class UnitService {
         normalizedUnit.unit_number
       )
       normalizedUnit.sector_code = normalizedSectorCode === null ? undefined : normalizedSectorCode
+    }
+    if ('status' in normalizedUnit) {
+      normalizedUnit.status = this.normalizeUnitStatus(normalizedUnit.status)
+    }
+    if ('unit_type' in normalizedUnit) {
+      normalizedUnit.unit_type = this.normalizeUnitType(normalizedUnit.unit_type)
     }
 
     const allowedColumns = [
@@ -203,7 +253,7 @@ class UnitService {
    * Complex ledger import that creates Units, Maintenance Letters, and Add-ons in one transaction.
    * Explodes one Excel row into multiple entities.
    */
-  public async importLedger(projectId: number, rows: Record<string, unknown>[]): Promise<boolean> {
+  public importLedger(projectId: number, rows: Record<string, unknown>[]): boolean {
     this.logDebug(`[IMPORT] Starting ledger import for project ${projectId} with ${rows.length} rows`)
 
     return dbService.transaction(() => {
@@ -253,7 +303,10 @@ class UnitService {
               ])
             }
             if (row.unit_type) {
-              dbService.run('UPDATE units SET unit_type = ? WHERE id = ?', [row.unit_type as string, unitId])
+              dbService.run('UPDATE units SET unit_type = ? WHERE id = ?', [
+                this.normalizeUnitType(row.unit_type),
+                unitId
+              ])
             }
             if (row.area_sqft !== undefined && Number(row.area_sqft) > 0) {
               dbService.run('UPDATE units SET area_sqft = ? WHERE id = ?', [
@@ -262,7 +315,10 @@ class UnitService {
               ])
             }
             if (row.status) {
-              dbService.run('UPDATE units SET status = ? WHERE id = ?', [row.status as string, unitId])
+              dbService.run('UPDATE units SET status = ? WHERE id = ?', [
+                this.normalizeUnitStatus(row.status),
+                unitId
+              ])
             }
             if (normalizedSectorCode !== null || row.sector_code !== undefined) {
               dbService.run('UPDATE units SET sector_code = ? WHERE id = ?', [
@@ -271,19 +327,19 @@ class UnitService {
               ])
             }
           } else {
-            unitId = this.create({
-              project_id: projectId,
-              unit_number: unitNumber,
-              sector_code: normalizedSectorCode || undefined,
-              owner_name: (row.owner_name as string) || 'Unknown',
-              unit_type: (row.unit_type as string) || 'Bungalow',
-              area_sqft: Number(row.area_sqft) || 1000, // Default if missing
-              contact_number: (row.contact_number as string) || '',
-              email: (row.email as string) || '',
-              status: (row.status as string) || 'Active',
-              penalty: Number(row.penalty) || 0
-            })
-          }
+              unitId = this.create({
+                project_id: projectId,
+                unit_number: unitNumber,
+                sector_code: normalizedSectorCode || undefined,
+                owner_name: (row.owner_name as string) || 'Unknown',
+                unit_type: this.normalizeUnitType(row.unit_type),
+                area_sqft: Number(row.area_sqft) || 1000, // Default if missing
+                contact_number: (row.contact_number as string) || '',
+                email: (row.email as string) || '',
+                status: this.normalizeUnitStatus(row.status),
+                penalty: Number(row.penalty) || 0
+              })
+            }
 
           // B. Explode Year Columns into Maintenance Letters
           if (row.years && Array.isArray(row.years)) {
@@ -298,6 +354,15 @@ class UnitService {
               const normalizedFinancialYear = String(financial_year || '').trim()
               const normalizedBaseAmount = Number(base_amount) || 0
               const normalizedArrears = Number(arrears) || 0
+              const normalizedDiscountAmount = Number(
+                (yearData as { discount_amount?: number }).discount_amount
+              ) || 0
+              const normalizedFinalAmountInput = Number(
+                (yearData as { final_amount?: number }).final_amount
+              )
+              const normalizedDueDate = this.normalizeIsoDate(
+                (yearData as { due_date?: string }).due_date
+              )
 
               const normalizedAddOns = Array.isArray(add_ons)
                 ? add_ons
@@ -313,7 +378,9 @@ class UnitService {
                 normalizedBaseAmount <= 0 &&
                 normalizedArrears === 0 &&
                 totalAddons === 0 &&
-                normalizedAddOns.length === 0
+                normalizedAddOns.length === 0 &&
+                normalizedDiscountAmount === 0 &&
+                (!Number.isFinite(normalizedFinalAmountInput) || normalizedFinalAmountInput <= 0)
               ) {
                 continue
               }
@@ -322,57 +389,37 @@ class UnitService {
                 continue
               }
 
-              const finalAmount = normalizedBaseAmount + normalizedArrears + totalAddons
+              const calculatedFinalAmount =
+                normalizedBaseAmount + normalizedArrears + totalAddons - normalizedDiscountAmount
+              const finalAmount =
+                Number.isFinite(normalizedFinalAmountInput) && normalizedFinalAmountInput > 0
+                  ? normalizedFinalAmountInput
+                  : Math.max(calculatedFinalAmount, 0)
 
               // Upsert one maintenance letter per unit + financial year.
               dbService.run(
                 `INSERT INTO maintenance_letters (
-                  project_id, unit_id, financial_year, base_amount, arrears, final_amount, status, is_paid, is_sent
-                ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', 0, 0)
+                  project_id, unit_id, financial_year, base_amount, arrears, discount_amount, final_amount, due_date, status, is_paid, is_sent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 0, 0)
                 ON CONFLICT(unit_id, financial_year) DO UPDATE SET
                   project_id = excluded.project_id,
                   base_amount = excluded.base_amount,
                   arrears = excluded.arrears,
+                  discount_amount = excluded.discount_amount,
                   final_amount = excluded.final_amount,
-                  status = CASE
-                    WHEN COALESCE(
-                      (
-                        SELECT SUM(payment_amount)
-                        FROM payments
-                        WHERE letter_id = maintenance_letters.id
-                           OR (
-                             letter_id IS NULL
-                             AND unit_id = maintenance_letters.unit_id
-                             AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
-                           )
-                      ),
-                      0
-                    ) + 0.01 >= excluded.final_amount THEN 'Paid'
-                    ELSE 'Pending'
-                  END,
-                  is_paid = CASE
-                    WHEN COALESCE(
-                      (
-                        SELECT SUM(payment_amount)
-                        FROM payments
-                        WHERE letter_id = maintenance_letters.id
-                           OR (
-                             letter_id IS NULL
-                             AND unit_id = maintenance_letters.unit_id
-                             AND TRIM(COALESCE(financial_year, '')) = TRIM(maintenance_letters.financial_year)
-                           )
-                      ),
-                      0
-                    ) + 0.01 >= excluded.final_amount THEN 1
-                    ELSE 0
-                  END`,
+                  due_date = excluded.due_date,
+                  status = 'Pending',
+                  is_paid = 0,
+                  is_sent = 0`,
                 [
                   projectId,
                   unitId,
                   normalizedFinancialYear,
                   normalizedBaseAmount,
                   normalizedArrears,
-                  finalAmount
+                  normalizedDiscountAmount,
+                  finalAmount,
+                  normalizedDueDate
                 ]
               )
 

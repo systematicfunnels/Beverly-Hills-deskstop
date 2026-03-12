@@ -36,6 +36,8 @@ interface MaintenanceRateModalProps {
 const { Option } = Select
 const { Text, Title } = Typography
 
+const UNIT_TYPE_OPTIONS = ['All', 'Plot', 'Bungalow', 'Garden'] as const
+
 interface RateFormValues {
   financial_year: string
   unit_type: string
@@ -502,9 +504,11 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
               suffixIcon={<FilterOutlined />}
               aria-label="Filter by unit type"
             >
-              <Option value="All">All</Option>
-              <Option value="Plot">Plot</Option>
-              <Option value="Bungalow">Bungalow</Option>
+              {UNIT_TYPE_OPTIONS.map((unitType) => (
+                <Option key={unitType} value={unitType}>
+                  {unitType}
+                </Option>
+              ))}
             </Select>
             <Button
               type="primary"
@@ -587,9 +591,11 @@ const MaintenanceRateModal: React.FC<MaintenanceRateModalProps> = ({
                 style={{ marginBottom: 8 }}
               >
                 <Select style={{ width: 120 }} aria-label="Unit type">
-                  <Option value="All">All</Option>
-                  <Option value="Plot">Plot</Option>
-                  <Option value="Bungalow">Bungalow</Option>
+                  {UNIT_TYPE_OPTIONS.map((unitType) => (
+                    <Option key={unitType} value={unitType}>
+                      {unitType}
+                    </Option>
+                  ))}
                 </Select>
               </Form.Item>
               <Form.Item<RateFormValues>

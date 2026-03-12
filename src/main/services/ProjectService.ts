@@ -1,7 +1,9 @@
 import { dbService } from '../db/database'
+import { unitService } from './UnitService'
 
 export interface Project {
   id?: number
+  project_code?: string
   name: string
   address?: string
   city?: string
@@ -58,7 +60,186 @@ export interface ProjectSetupSummary {
   ready_for_letters: boolean
 }
 
+export interface StandardWorkbookImportYear {
+  financial_year: string
+  base_amount: number
+  arrears?: number
+  discount_amount?: number
+  final_amount?: number
+  due_date?: string
+  add_ons?: { name: string; amount: number }[]
+}
+
+export interface StandardWorkbookImportRow {
+  unit_number: string
+  sector_code?: string
+  owner_name?: string
+  area_sqft?: number
+  unit_type?: string
+  status?: string
+  contact_number?: string
+  email?: string
+  penalty?: number
+  years?: StandardWorkbookImportYear[]
+}
+
+export interface StandardWorkbookProjectImportPayload {
+  project: Project
+  sector_configs?: Partial<ProjectSectorPaymentConfig>[]
+  rows: StandardWorkbookImportRow[]
+}
+
+export interface StandardWorkbookProjectImportResult {
+  project_id: number
+  project_code: string
+  project_name: string
+  created: boolean
+  imported_units: number
+  imported_letters: number
+  sector_configs_merged: boolean
+}
+
 class ProjectService {
+  private sanitizeText(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : String(value || '').trim()
+  }
+
+  private normalizeProjectStatus(status: unknown): string {
+    const normalized = this.sanitizeText(status).toLowerCase()
+    if (!normalized || normalized === 'active') return 'Active'
+    if (normalized === 'inactive') return 'Inactive'
+    return this.sanitizeText(status) || 'Active'
+  }
+
+  private normalizeTemplateType(templateType: unknown): string {
+    const normalized = this.sanitizeText(templateType).toLowerCase()
+    if (!normalized || normalized === 'maintenance' || normalized === 'standard') return 'standard'
+    if (normalized === 'sector_legacy' || normalized === 'sector legacy') return 'sector_legacy'
+    if (
+      normalized === 'reminder_legacy' ||
+      normalized === 'reminder legacy' ||
+      normalized === 'reminder'
+    ) {
+      return 'reminder_legacy'
+    }
+    return this.sanitizeText(templateType) || 'standard'
+  }
+
+  private normalizeImportProfile(importProfileKey: unknown): string {
+    const normalized = this.sanitizeText(importProfileKey).toLowerCase()
+    if (!normalized || normalized === 'standard' || normalized === 'maintenance') {
+      return 'standard_normalized'
+    }
+    if (
+      normalized === 'standard_normalized' ||
+      normalized === 'beverly_abc_v1' ||
+      normalized === 'banjara_numeric_v1'
+    ) {
+      return normalized
+    }
+    return this.sanitizeText(importProfileKey) || 'standard_normalized'
+  }
+
+  private generateNextProjectCode(): string {
+    const existingCodes = dbService.query<{ project_code: string | null }>(
+      "SELECT project_code FROM projects WHERE project_code IS NOT NULL AND TRIM(project_code) <> ''"
+    )
+    let maxSequence = 0
+    for (const row of existingCodes) {
+      const normalizedCode = this.sanitizeText(row.project_code).toUpperCase()
+      const match = normalizedCode.match(/^PRJ-(\d+)$/)
+      if (match) {
+        maxSequence = Math.max(maxSequence, Number(match[1]))
+      }
+    }
+    return `PRJ-${String(maxSequence + 1).padStart(3, '0')}`
+  }
+
+  private getByName(name: string): Project | undefined {
+    return dbService.get<Project>('SELECT * FROM projects WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))', [name])
+  }
+
+  private mergeImportedProject(existingProject: Project | undefined, incomingProject: Project): Project {
+    const mergedProject: Project = existingProject ? { ...existingProject } : { name: incomingProject.name }
+    type TextProjectField =
+      | 'name'
+      | 'address'
+      | 'city'
+      | 'state'
+      | 'pincode'
+      | 'letterhead_path'
+      | 'account_name'
+      | 'bank_name'
+      | 'account_no'
+      | 'ifsc_code'
+      | 'branch'
+      | 'branch_address'
+      | 'qr_code_path'
+    const textFields: TextProjectField[] = [
+      'name',
+      'address',
+      'city',
+      'state',
+      'pincode',
+      'letterhead_path',
+      'account_name',
+      'bank_name',
+      'account_no',
+      'ifsc_code',
+      'branch',
+      'branch_address',
+      'qr_code_path'
+    ]
+
+    for (const field of textFields) {
+      const normalized = this.sanitizeText(incomingProject[field])
+      if (normalized) {
+        ;(mergedProject as Record<TextProjectField, string | undefined>)[field] =
+          field === 'ifsc_code' ? normalized.toUpperCase() : normalized
+      }
+    }
+
+    mergedProject.status = this.normalizeProjectStatus(incomingProject.status || existingProject?.status)
+    mergedProject.template_type = this.normalizeTemplateType(
+      incomingProject.template_type || existingProject?.template_type
+    )
+    mergedProject.import_profile_key = this.normalizeImportProfile(
+      incomingProject.import_profile_key || existingProject?.import_profile_key
+    )
+
+    return mergedProject
+  }
+
+  private normalizeSectorConfig(
+    config: Partial<ProjectSectorPaymentConfig>
+  ): Partial<ProjectSectorPaymentConfig> | null {
+    const sectorCode = this.sanitizeText(config.sector_code).toUpperCase()
+    if (!sectorCode) return null
+
+    return {
+      sector_code: sectorCode,
+      account_name: this.sanitizeText(config.account_name),
+      bank_name: this.sanitizeText(config.bank_name),
+      account_no: this.sanitizeText(config.account_no),
+      ifsc_code: this.sanitizeText(config.ifsc_code).toUpperCase(),
+      branch: this.sanitizeText(config.branch),
+      branch_address: this.sanitizeText(config.branch_address),
+      qr_code_path: this.sanitizeText(config.qr_code_path)
+    }
+  }
+
+  private hasSectorConfigDetails(config: Partial<ProjectSectorPaymentConfig>): boolean {
+    return [
+      config.account_name,
+      config.bank_name,
+      config.account_no,
+      config.ifsc_code,
+      config.branch,
+      config.branch_address,
+      config.qr_code_path
+    ].some((value) => this.sanitizeText(value).length > 0)
+  }
+
   private normalizeUnitType(unitType: unknown): string {
     const normalized = String(unitType || '').trim().toLowerCase()
     if (!normalized || normalized === 'flat' || normalized === 'bungalow') return 'Bungalow'
@@ -89,9 +270,10 @@ class ProjectService {
   public create(project: Project): number {
     const result = dbService.run(
       `INSERT INTO projects (
-        name, address, city, state, pincode, status, letterhead_path, account_name, bank_name, account_no, ifsc_code, branch, branch_address, qr_code_path, template_type, import_profile_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        project_code, name, address, city, state, pincode, status, letterhead_path, account_name, bank_name, account_no, ifsc_code, branch, branch_address, qr_code_path, template_type, import_profile_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        this.sanitizeText(project.project_code).toUpperCase() || this.generateNextProjectCode(),
         project.name,
         project.address,
         project.city,
@@ -372,6 +554,86 @@ class ProjectService {
       }
 
       return true
+    })
+  }
+
+  public importStandardWorkbookProject(
+    payload: StandardWorkbookProjectImportPayload
+  ): StandardWorkbookProjectImportResult {
+    return dbService.transaction(() => {
+      const projectName = this.sanitizeText(payload?.project?.name)
+      if (!projectName) {
+        throw new Error('Project name is required for workbook import')
+      }
+
+      const existingProject = this.getByName(projectName)
+      const mergedProject = this.mergeImportedProject(existingProject, {
+        ...payload.project,
+        name: projectName
+      })
+
+      let projectId: number
+      if (existingProject?.id) {
+        this.update(existingProject.id, mergedProject)
+        projectId = existingProject.id
+      } else {
+        projectId = this.create(mergedProject)
+      }
+
+      const incomingSectorConfigs = Array.isArray(payload.sector_configs)
+        ? payload.sector_configs
+            .map((config) => this.normalizeSectorConfig(config))
+            .filter((config): config is Partial<ProjectSectorPaymentConfig> => config !== null)
+        : []
+      const incomingSectorDetailConfigs = incomingSectorConfigs.filter((config) =>
+        this.hasSectorConfigDetails(config)
+      )
+
+      let sectorConfigsMerged = false
+      if (incomingSectorDetailConfigs.length > 0) {
+        const existingSectorConfigMap = new Map<string, Partial<ProjectSectorPaymentConfig>>(
+          this.getSectorPaymentConfigs(projectId).map((config) => [
+            this.sanitizeText(config.sector_code).toUpperCase(),
+            {
+              sector_code: this.sanitizeText(config.sector_code).toUpperCase(),
+              account_name: this.sanitizeText(config.account_name),
+              bank_name: this.sanitizeText(config.bank_name),
+              account_no: this.sanitizeText(config.account_no),
+              ifsc_code: this.sanitizeText(config.ifsc_code).toUpperCase(),
+              branch: this.sanitizeText(config.branch),
+              branch_address: this.sanitizeText(config.branch_address),
+              qr_code_path: this.sanitizeText(config.qr_code_path)
+            }
+          ])
+        )
+
+        for (const config of incomingSectorDetailConfigs) {
+          existingSectorConfigMap.set(String(config.sector_code), config)
+        }
+
+        this.saveSectorPaymentConfigs(projectId, Array.from(existingSectorConfigMap.values()))
+        sectorConfigsMerged = true
+      }
+
+      const rows = Array.isArray(payload.rows) ? payload.rows : []
+      if (rows.length > 0) {
+        unitService.importLedger(projectId, rows as unknown as Record<string, unknown>[])
+      }
+
+      const importedLetterCount = rows.reduce((count, row) => {
+        const years = Array.isArray(row.years) ? row.years : []
+        return count + years.length
+      }, 0)
+
+      return {
+        project_id: projectId,
+        project_code: this.getById(projectId)?.project_code || '',
+        project_name: mergedProject.name,
+        created: !existingProject?.id,
+        imported_units: rows.length,
+        imported_letters: importedLetterCount,
+        sector_configs_merged: sectorConfigsMerged
+      }
     })
   }
 
