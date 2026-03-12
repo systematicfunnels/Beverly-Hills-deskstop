@@ -54,8 +54,8 @@ class DatabaseService {
 
   constructor() {
     const dbPath = app.isPackaged
-      ? path.join(app.getPath('userData'), 'beverly-hills.db')
-      : path.join(__dirname, '../../beverly-hills.db')
+      ? path.join(app.getPath('userData'), 'barkat.db')
+      : path.join(__dirname, '../../barkat.db')
 
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
