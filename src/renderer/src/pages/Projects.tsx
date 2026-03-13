@@ -938,29 +938,39 @@ const Projects: React.FC = () => {
                   <Input />
                 </Form.Item>
 
-                <Form.Item name="qr_code_path" label="Default QR / Barcode" style={{ gridColumn: 'span 2' }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input placeholder="Default QR image path (.png/.jpg/.jpeg)" />
-                    <Button
-                      icon={<FolderOpenOutlined />}
-                      onClick={() => void pickProjectFile('qr_code_path', 'Select Default QR / Barcode')}
-                    >
-                      Browse
-                    </Button>
-                  </div>
-                </Form.Item>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <Form.Item name="qr_code_path" label="Default QR / Barcode">
+                    <Input 
+                      placeholder="Default QR image path (.png/.jpg/.jpeg)"
+                      addonAfter={
+                        <Button
+                          type="text"
+                          icon={<FolderOpenOutlined />}
+                          onClick={() => void pickProjectFile('qr_code_path', 'Select Default QR / Barcode')}
+                        >
+                          Browse
+                        </Button>
+                      }
+                    />
+                  </Form.Item>
+                </div>
 
-                <Form.Item name="letterhead_path" label="Letterhead Image" style={{ gridColumn: 'span 2' }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input placeholder="Letterhead image path (.png/.jpg/.jpeg)" />
-                    <Button
-                      icon={<FolderOpenOutlined />}
-                      onClick={() => void pickProjectFile('letterhead_path', 'Select Letterhead Image')}
-                    >
-                      Browse
-                    </Button>
-                  </div>
-                </Form.Item>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <Form.Item name="letterhead_path" label="Letterhead Image">
+                    <Input 
+                      placeholder="Letterhead image path (.png/.jpg/.jpeg)"
+                      addonAfter={
+                        <Button
+                          type="text"
+                          icon={<FolderOpenOutlined />}
+                          onClick={() => void pickProjectFile('letterhead_path', 'Select Letterhead Image')}
+                        >
+                          Browse
+                        </Button>
+                      }
+                    />
+                  </Form.Item>
+                </div>
               </div>
             </TabPane>
 

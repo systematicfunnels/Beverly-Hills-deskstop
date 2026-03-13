@@ -20,6 +20,15 @@ import {
   detailedMaintenanceLetterService,
   LetterCalculation
 } from './services/DetailedMaintenanceLetterService'
+import { dryRunService } from './services/DryRunService'
+import { errorLogger, getSafeErrorMessage, ValidationError } from './utils/errorHandler'
+import { workerPool, WorkerTask } from './utils/workerPool'
+import { backupService } from './services/BackupService'
+import { batchOperationsService } from './services/BatchOperationsService'
+import {
+  ProjectStatus,
+  UnitStatus
+} from './types/enums'
 
 const isPositiveInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0
@@ -37,6 +46,13 @@ const isFinancialYear = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}$/.test(value)
 
 const sanitizeText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+// Enum validation helpers
+const isValidProjectStatus = (value: unknown): value is ProjectStatus =>
+  typeof value === 'string' && Object.values(ProjectStatus).includes(value as ProjectStatus)
+
+const isValidUnitStatus = (value: unknown): value is UnitStatus =>
+  typeof value === 'string' && Object.values(UnitStatus).includes(value as UnitStatus)
 
 export function registerIpcHandlers(): void {
   // Projects
@@ -95,6 +111,9 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('update-project', (_, id: number, project: Partial<Project>): boolean => {
+    if (project.status !== undefined && !isValidProjectStatus(project.status)) {
+      throw new Error(`Invalid project status. Expected: ${Object.values(ProjectStatus).join(', ')}`)
+    }
     return projectService.update(id, project)
   })
 
@@ -140,6 +159,35 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle('get-project-charges-config', (_, projectId: number) => {
+    if (!isPositiveInteger(projectId)) {
+      throw new Error('Invalid project selected')
+    }
+    return projectService.getChargesConfig(projectId)
+  })
+
+  ipcMain.handle('save-project-charges-config', (_, config) => {
+    if (!isPositiveInteger(config?.project_id)) {
+      throw new Error('Invalid project selected')
+    }
+    if (!isNonNegativeNumber(config?.na_tax_rate_per_sqft)) {
+      throw new Error('N.A. tax rate must be >= 0')
+    }
+    if (!isNonNegativeNumber(config?.solar_contribution)) {
+      throw new Error('Solar contribution must be >= 0')
+    }
+    if (!isNonNegativeNumber(config?.cable_charges)) {
+      throw new Error('Cable charges must be >= 0')
+    }
+    if (!isNonNegativeNumber(config?.penalty_percentage) || config?.penalty_percentage > 100) {
+      throw new Error('Penalty percentage must be between 0 and 100')
+    }
+    if (!isNonNegativeNumber(config?.early_payment_discount_percentage) || config?.early_payment_discount_percentage > 100) {
+      throw new Error('Early payment discount percentage must be between 0 and 100')
+    }
+    return projectService.saveChargesConfig(config)
+  })
+
   ipcMain.handle('delete-project', (_, id: number): boolean => {
     return projectService.delete(id)
   })
@@ -181,6 +229,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('update-unit', (_, id: number, unit: Partial<Unit>): boolean => {
+    if (unit.status !== undefined && !isValidUnitStatus(unit.status)) {
+      throw new Error(`Invalid unit status. Expected: ${Object.values(UnitStatus).join(', ')}`)
+    }
     return unitService.update(id, unit)
   })
 
@@ -517,6 +568,171 @@ export function registerIpcHandlers(): void {
         violations: [],
         logs
       }
+    }
+  })
+
+  // Dry-run endpoints (preview before commit)
+  ipcMain.handle(
+    'dry-run-import',
+    (_, projectId: number, rows: unknown[]) => {
+      try {
+        if (!isPositiveInteger(projectId)) {
+          throw new ValidationError('Invalid project selected')
+        }
+        if (!Array.isArray(rows)) {
+          throw new ValidationError('Invalid rows payload')
+        }
+        return dryRunService.previewImport(projectId, rows)
+      } catch (error: unknown) {
+        errorLogger.log(error as Error, { operation: 'dry-run-import' })
+        throw new Error(getSafeErrorMessage(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'dry-run-billing',
+    (_, projectId: number, financialYear: string, unitIds?: number[]) => {
+      try {
+        if (!isPositiveInteger(projectId)) {
+          throw new ValidationError('Invalid project selected')
+        }
+        if (!isFinancialYear(financialYear)) {
+          throw new ValidationError('Invalid financial year format')
+        }
+        return dryRunService.previewBilling(projectId, financialYear, unitIds)
+      } catch (error: unknown) {
+        errorLogger.log(error as Error, { operation: 'dry-run-billing' })
+        throw new Error(getSafeErrorMessage(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'dry-run-payment',
+    (_, unitId: number, projectId: number) => {
+      try {
+        if (!isPositiveInteger(unitId) || !isPositiveInteger(projectId)) {
+          throw new ValidationError('Invalid unit or project')
+        }
+        return dryRunService.previewPayment(unitId, projectId)
+      } catch (error: unknown) {
+        errorLogger.log(error as Error, { operation: 'dry-run-payment' })
+        throw new Error(getSafeErrorMessage(error))
+      }
+    }
+  )
+
+  // Worker/background task endpoints
+  ipcMain.handle(
+    'enqueue-worker-task',
+    async (_, taskType: string, data: Record<string, unknown>) => {
+      try {
+        const taskId = `${taskType}_${Date.now()}_${Math.random().toString(36).slice(2)}`
+        const task: WorkerTask = {
+          id: taskId,
+          type: taskType,
+          data,
+          priority: data.priority as number | undefined
+        }
+        await workerPool.enqueue(task)
+        return { taskId, status: 'queued' }
+      } catch (error: unknown) {
+        errorLogger.log(error as Error, { operation: 'enqueue-worker-task' })
+        throw new Error(getSafeErrorMessage(error))
+      }
+    }
+  )
+
+  ipcMain.handle('worker-task-status', (_, taskId: string) => {
+    return workerPool.getStatus(taskId)
+  })
+
+  ipcMain.handle('worker-task-cancel', (_, taskId: string) => {
+    workerPool.cancel(taskId)
+    return { taskId, cancelled: true }
+  })
+
+  // Error logging (for renderer to send error logs)
+  ipcMain.handle('get-error-logs', (_, limit: number = 100) => {
+    return errorLogger.getLogs(limit)
+  })
+
+  ipcMain.handle('clear-error-logs', () => {
+    errorLogger.clear()
+    return { cleared: true }
+  })
+
+  // Backup & Restore endpoints
+  ipcMain.handle('create-backup', async () => {
+    try {
+      const result = await backupService.createBackup()
+      if (!result.success) {
+        throw new Error(result.error)
+      }
+      return result
+    } catch (error: unknown) {
+      errorLogger.log(error as Error, { operation: 'create-backup' })
+      throw new Error(getSafeErrorMessage(error))
+    }
+  })
+
+  ipcMain.handle('restore-backup', async (_, backupPath: string) => {
+    try {
+      if (!backupPath) {
+        throw new ValidationError('Backup path required')
+      }
+      const result = await backupService.restoreBackup(backupPath)
+      if (!result.success) {
+        throw new Error(result.error)
+      }
+      return result
+    } catch (error: unknown) {
+      errorLogger.log(error as Error, { operation: 'restore-backup', backupPath })
+      throw new Error(getSafeErrorMessage(error))
+    }
+  })
+
+  ipcMain.handle('list-backups', () => {
+    return backupService.listBackups()
+  })
+
+  ipcMain.handle('start-auto-backup', (_, intervalDays: number = 7) => {
+    backupService.startAutoBackup(intervalDays)
+    return { enabled: true, intervalDays }
+  })
+
+  ipcMain.handle('stop-auto-backup', () => {
+    backupService.stopAutoBackup()
+    return { enabled: false }
+  })
+
+  ipcMain.handle('get-backup-config', () => {
+    return backupService.getConfig()
+  })
+
+  // Batch operations endpoints
+  ipcMain.handle('batch-create-payments', (_, payments: Payment[]) => {
+    try {
+      if (!Array.isArray(payments)) {
+        throw new ValidationError('Invalid payments array')
+      }
+      return batchOperationsService.createBulkPayments(payments)
+    } catch (error: unknown) {
+      errorLogger.log(error as Error, { operation: 'batch-create-payments' })
+      throw new Error(getSafeErrorMessage(error))
+    }
+  })
+
+  ipcMain.handle('batch-delete-payments', (_, paymentIds: number[]) => {
+    try {
+      if (!Array.isArray(paymentIds)) {
+        throw new ValidationError('Invalid payment IDs array')
+      }
+      return batchOperationsService.bulkDeletePayments(paymentIds)
+    } catch (error: unknown) {
+      errorLogger.log(error as Error, { operation: 'batch-delete-payments' })
+      throw new Error(getSafeErrorMessage(error))
     }
   })
 }

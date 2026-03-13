@@ -122,6 +122,51 @@ const api = {
       ipcRenderer.invoke('generate-detailed-letter', projectId, unitId, financialYear) as Promise<LetterCalculation>,
     generatePdf: (projectId: number, unitId: number, financialYear: string) =>
       ipcRenderer.invoke('generate-detailed-pdf', projectId, unitId, financialYear) as Promise<string>
+  },
+  dryRun: {
+    previewImport: (projectId: number, rows: unknown[]) =>
+      ipcRenderer.invoke('dry-run-import', projectId, rows),
+    previewBilling: (projectId: number, financialYear: string, unitIds?: number[]) =>
+      ipcRenderer.invoke('dry-run-billing', projectId, financialYear, unitIds),
+    previewPayment: (unitId: number, projectId: number) =>
+      ipcRenderer.invoke('dry-run-payment', unitId, projectId)
+  },
+  worker: {
+    enqueueTask: (taskType: string, data: Record<string, unknown>) =>
+      ipcRenderer.invoke('enqueue-worker-task', taskType, data),
+    getStatus: (taskId: string) =>
+      ipcRenderer.invoke('worker-task-status', taskId),
+    cancel: (taskId: string) =>
+      ipcRenderer.invoke('worker-task-cancel', taskId),
+    onProgress: (callback: (event: unknown) => void) => {
+      ipcRenderer.on('worker-progress', (_, event) => callback(event))
+    }
+  },
+  logging: {
+    getErrorLogs: (limit?: number) =>
+      ipcRenderer.invoke('get-error-logs', limit),
+    clearErrorLogs: () =>
+      ipcRenderer.invoke('clear-error-logs')
+  },
+  backup: {
+    createBackup: () =>
+      ipcRenderer.invoke('create-backup'),
+    restoreBackup: (backupPath: string) =>
+      ipcRenderer.invoke('restore-backup', backupPath),
+    listBackups: () =>
+      ipcRenderer.invoke('list-backups'),
+    startAutoBackup: (intervalDays?: number) =>
+      ipcRenderer.invoke('start-auto-backup', intervalDays),
+    stopAutoBackup: () =>
+      ipcRenderer.invoke('stop-auto-backup'),
+    getConfig: () =>
+      ipcRenderer.invoke('get-backup-config')
+  },
+  batch: {
+    createPayments: (payments: Payment[]) =>
+      ipcRenderer.invoke('batch-create-payments', payments),
+    deletePayments: (paymentIds: number[]) =>
+      ipcRenderer.invoke('batch-delete-payments', paymentIds)
   }
 }
 

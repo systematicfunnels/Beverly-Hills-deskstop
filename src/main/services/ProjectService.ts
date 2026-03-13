@@ -33,6 +33,18 @@ export interface ProjectSectorPaymentConfig {
   updated_at?: string
 }
 
+export interface ProjectChargesConfig {
+  id?: number
+  project_id: number
+  na_tax_rate_per_sqft: number
+  solar_contribution: number
+  cable_charges: number
+  penalty_percentage: number
+  early_payment_discount_percentage: number
+  created_at?: string
+  updated_at?: string
+}
+
 export interface ProjectSetupSummary {
   project_id: number
   project_name: string
@@ -523,6 +535,74 @@ class ProjectService {
             projectId,
             sectorCode,
             config.qr_code_path
+          ]
+        )
+      }
+
+      return true
+    })
+  }
+
+  public getChargesConfig(projectId: number): ProjectChargesConfig {
+    const result = dbService.query<ProjectChargesConfig>(
+      `SELECT * FROM project_charges_config WHERE project_id = ?`,
+      [projectId]
+    )
+    
+    if (result.length > 0) {
+      return result[0]
+    }
+
+    // Return defaults if no config exists
+    return {
+      project_id: projectId,
+      na_tax_rate_per_sqft: 0.09,
+      solar_contribution: 3000,
+      cable_charges: 1000,
+      penalty_percentage: 21,
+      early_payment_discount_percentage: 10
+    }
+  }
+
+  public saveChargesConfig(config: ProjectChargesConfig): boolean {
+    return dbService.transaction(() => {
+      const existing = dbService.query<ProjectChargesConfig>(
+        `SELECT id FROM project_charges_config WHERE project_id = ?`,
+        [config.project_id]
+      )
+
+      if (existing.length > 0) {
+        dbService.run(
+          `UPDATE project_charges_config
+           SET na_tax_rate_per_sqft = ?,
+               solar_contribution = ?,
+               cable_charges = ?,
+               penalty_percentage = ?,
+               early_payment_discount_percentage = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE project_id = ?`,
+          [
+            config.na_tax_rate_per_sqft,
+            config.solar_contribution,
+            config.cable_charges,
+            config.penalty_percentage,
+            config.early_payment_discount_percentage,
+            config.project_id
+          ]
+        )
+      } else {
+        dbService.run(
+          `INSERT INTO project_charges_config (
+            project_id, na_tax_rate_per_sqft, solar_contribution,
+            cable_charges, penalty_percentage, early_payment_discount_percentage
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            config.project_id,
+            config.na_tax_rate_per_sqft,
+            config.solar_contribution,
+            config.cable_charges,
+            config.penalty_percentage,
+            config.early_payment_discount_percentage
           ]
         )
       }

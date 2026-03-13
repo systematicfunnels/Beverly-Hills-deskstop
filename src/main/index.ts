@@ -3,6 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipcHandlers'
+import { workerPool } from './utils/workerPool'
+import { backupService } from './services/BackupService'
 
 function createWindow(): void {
   // Create the browser window.
@@ -27,6 +29,9 @@ function createWindow(): void {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
+
+  // Initialize worker pool with main window for progress events
+  workerPool.setMainWindow(mainWindow)
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
@@ -56,6 +61,9 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   registerIpcHandlers()
+
+  // Initialize auto-backup service (weekly interval by default)
+  backupService.startAutoBackup(7)
 
   createWindow()
 

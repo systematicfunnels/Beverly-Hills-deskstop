@@ -100,7 +100,7 @@ class UnitService {
       `UPDATE maintenance_letters
        SET
          status = CASE
-           WHEN COALESCE(
+           WHEN ROUND(COALESCE(
              (
                SELECT SUM(p.payment_amount)
                FROM payments p
@@ -112,11 +112,11 @@ class UnitService {
                   )
              ),
              0
-           ) + 0.01 >= maintenance_letters.final_amount THEN 'Paid'
+           ), 2) >= ROUND(maintenance_letters.final_amount, 2) THEN 'Paid'
            ELSE 'Pending'
          END,
          is_paid = CASE
-           WHEN COALESCE(
+           WHEN ROUND(COALESCE(
              (
                SELECT SUM(p.payment_amount)
                FROM payments p
@@ -128,7 +128,7 @@ class UnitService {
                   )
              ),
              0
-           ) + 0.01 >= maintenance_letters.final_amount THEN 1
+           ), 2) >= ROUND(maintenance_letters.final_amount, 2) THEN 1
            ELSE 0
          END
        WHERE id = ?`,

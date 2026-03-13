@@ -3,6 +3,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { projectService } from './ProjectService'
 
 export interface DetailedMaintenanceLetter {
   id?: number
@@ -124,7 +125,9 @@ class DetailedMaintenanceLetterService {
         const outstanding = Math.max(0, letter.final_amount - payments)
         
         if (outstanding > 0) {
-          const penalty = outstanding * 0.21 // 21% penalty
+          const chargesConfig = projectService.getChargesConfig(projectId)
+          const penaltyRate = chargesConfig.penalty_percentage / 100
+          const penalty = outstanding * penaltyRate
           arrears.push({
             financial_year: fy,
             amount: outstanding,
@@ -148,16 +151,19 @@ class DetailedMaintenanceLetterService {
 
     const base_amount = letter?.base_amount || 0
     
-    // Calculate N.A. Tax (0.09 per sqft)
+    // Get project charges configuration
+    const chargesConfig = projectService.getChargesConfig(projectId)
+    
+    // Calculate N.A. Tax using configured rate
     const unit = dbService.get<{ area_sqft: number }>(
       'SELECT area_sqft FROM units WHERE id = ?',
       [unitId]
     )
-    const na_tax = (unit?.area_sqft || 0) * 0.09
+    const na_tax = (unit?.area_sqft || 0) * chargesConfig.na_tax_rate_per_sqft
 
-    // Fixed charges
-    const solar_contribution = 3000
-    const cable_charges = 1000
+    // Use configured fixed charges
+    const solar_contribution = chargesConfig.solar_contribution
+    const cable_charges = chargesConfig.cable_charges
 
     return {
       base_amount,
@@ -301,7 +307,8 @@ class DetailedMaintenanceLetterService {
     const grand_total_before_discount = total_arrears_with_penalty + total_current_charges
     
     // 10% early payment discount
-    const early_payment_discount = grand_total_before_discount * 0.10
+    const chargesConfig = projectService.getChargesConfig(projectId)
+    const early_payment_discount = grand_total_before_discount * (chargesConfig.early_payment_discount_percentage / 100)
     const amount_payable_before_due = grand_total_before_discount - early_payment_discount
     const amount_payable_after_due = grand_total_before_discount
 

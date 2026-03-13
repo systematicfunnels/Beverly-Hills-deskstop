@@ -1,0 +1,45 @@
+/**
+ * Enums for all status types used in the application
+ * These ensure type safety and prevent typos that create orphaned records
+ */
+
+export enum ProjectStatus {
+  ACTIVE = 'Active',
+  INACTIVE = 'Inactive',
+}
+
+export enum UnitStatus {
+  ACTIVE = 'Active',
+  INACTIVE = 'Inactive',
+  VACANT = 'Vacant',
+}
+
+export enum PaymentStatus {
+  RECEIVED = 'Received',
+  PENDING = 'Pending',
+}
+
+export enum MaintenanceLetterStatus {
+  GENERATED = 'Generated',
+  MODIFIED = 'Modified',
+  PENDING = 'Pending',
+  PAID = 'Paid',
+}
+
+export enum PaymentMode {
+  CASH = 'Cash',
+  CHEQUE = 'Cheque',
+  UPI = 'UPI',
+}
+
+export enum UnitType {
+  BUNGALOW = 'Bungalow',
+  PLOT = 'Plot',
+  ALL = 'All',
+}
+
+export enum BillingFrequency {
+  YEARLY = 'YEARLY',
+  QUARTERLY = 'QUARTERLY',
+  MONTHLY = 'MONTHLY',
+}

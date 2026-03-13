@@ -396,6 +396,10 @@ class DatabaseService {
           this.db.exec("ALTER TABLE units ADD COLUMN status TEXT DEFAULT 'Active'")
         if (!columns.some((c) => c.name === 'penalty'))
           this.db.exec('ALTER TABLE units ADD COLUMN penalty REAL DEFAULT 0')
+        if (!columns.some((c) => c.name === 'billing_address'))
+          this.db.exec('ALTER TABLE units ADD COLUMN billing_address TEXT')
+        if (!columns.some((c) => c.name === 'resident_address'))
+          this.db.exec('ALTER TABLE units ADD COLUMN resident_address TEXT')
 
         // Backfill sector code from unit number patterns like "A-101" / "B/202".
         this.db.exec(`
