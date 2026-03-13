@@ -33,10 +33,13 @@ CREATE TABLE IF NOT EXISTS units (
   owner_name TEXT NOT NULL,
   contact_number TEXT,
   email TEXT,
+  billing_address TEXT,
+  resident_address TEXT,
   penalty REAL DEFAULT 0,
   status TEXT DEFAULT 'Active', -- Active, Inactive
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  UNIQUE(project_id, unit_number) ON CONFLICT REPLACE
 );
 
 CREATE TABLE IF NOT EXISTS project_sector_payment_configs (
@@ -106,7 +109,7 @@ CREATE TABLE IF NOT EXISTS payments (
   letter_id INTEGER,
   payment_date DATE NOT NULL,
   payment_amount REAL NOT NULL,
-  financial_year TEXT, -- Attribution for reports (nullable)
+  financial_year TEXT NOT NULL, -- Attribution for reports (required)
   payment_mode TEXT NOT NULL, -- Cash, Cheque, UPI
   reference_number TEXT, -- Aligned with ER
   cheque_number TEXT,
@@ -115,7 +118,7 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE CASCADE,
-  FOREIGN KEY (letter_id) REFERENCES maintenance_letters(id) ON DELETE SET NULL
+  FOREIGN KEY (letter_id) REFERENCES maintenance_letters(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS receipts (

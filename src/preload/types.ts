@@ -108,6 +108,7 @@ export interface StandardWorkbookImportYear {
   discount_amount?: number
   final_amount?: number
   due_date?: string
+  penalty?: number
   add_ons?: StandardWorkbookImportAddOn[]
 }
 
@@ -121,6 +122,8 @@ export interface StandardWorkbookImportRow {
   contact_number?: string
   email?: string
   penalty?: number
+  billing_address?: string
+  resident_address?: string
   years?: StandardWorkbookImportYear[]
 }
 

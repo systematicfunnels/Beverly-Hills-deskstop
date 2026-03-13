@@ -43,20 +43,25 @@ class PaymentService {
     )
     if (!letter) return
 
-    const paidAmount =
-      dbService.get<{ total: number }>(
-        `SELECT SUM(payment_amount) as total
-         FROM payments
-         WHERE letter_id = ?
-            OR (
-              letter_id IS NULL
-              AND unit_id = ?
-              AND TRIM(COALESCE(financial_year, '')) = TRIM(?)
-            )`,
-        [letterId, letter.unit_id, letter.financial_year]
-      )?.total || 0
+    // Calculate total payments for this specific letter
+    const letterPayments = dbService.get<{ total: number }>(
+      'SELECT COALESCE(SUM(payment_amount), 0) as total FROM payments WHERE letter_id = ?',
+      [letterId]
+    )?.total || 0
 
-    const isPaid = paidAmount + 0.01 >= letter.final_amount
+    // Calculate payments without letter_id but matching unit and financial year
+    const unlinkedPayments = dbService.get<{ total: number }>(
+      `SELECT COALESCE(SUM(payment_amount), 0) as total
+       FROM payments 
+       WHERE letter_id IS NULL 
+         AND unit_id = ? 
+         AND TRIM(COALESCE(financial_year, '')) = TRIM(?)`,
+      [letter.unit_id, letter.financial_year]
+    )?.total || 0
+
+    const totalPaid = letterPayments + unlinkedPayments
+    const isPaid = totalPaid + 0.01 >= letter.final_amount
+    
     dbService.run('UPDATE maintenance_letters SET status = ?, is_paid = ? WHERE id = ?', [
       isPaid ? 'Paid' : 'Pending',
       isPaid ? 1 : 0,
@@ -324,6 +329,32 @@ class PaymentService {
       let resolvedLetterId = payment.letter_id
       let resolvedFinancialYear = payment.financial_year
 
+      // Validate and resolve financial year
+      if (!resolvedFinancialYear) {
+        // If no financial year provided, try to get it from the letter
+        if (resolvedLetterId) {
+          resolvedFinancialYear = dbService.get<{ financial_year: string }>(
+            'SELECT financial_year FROM maintenance_letters WHERE id = ?',
+            [resolvedLetterId]
+          )?.financial_year
+        }
+        
+        // If still no financial year, try to get it from the unit's latest letter
+        if (!resolvedFinancialYear) {
+          resolvedFinancialYear = dbService.get<{ financial_year: string }>(
+            'SELECT financial_year FROM maintenance_letters WHERE unit_id = ? ORDER BY financial_year DESC LIMIT 1',
+            [payment.unit_id]
+          )?.financial_year
+        }
+        
+        // If still no financial year, use current financial year
+        if (!resolvedFinancialYear) {
+          const currentYear = new Date().getMonth() < 3 ? new Date().getFullYear() - 1 : new Date().getFullYear()
+          resolvedFinancialYear = `${currentYear}-${(currentYear + 1).toString().slice(2)}`
+        }
+      }
+
+      // Validate and resolve letter ID
       if (!resolvedLetterId && resolvedFinancialYear) {
         resolvedLetterId = dbService.get<{ id: number }>(
           'SELECT id FROM maintenance_letters WHERE unit_id = ? AND TRIM(financial_year) = TRIM(?)',
@@ -331,11 +362,9 @@ class PaymentService {
         )?.id
       }
 
-      if (!resolvedFinancialYear && resolvedLetterId) {
-        resolvedFinancialYear = dbService.get<{ financial_year: string }>(
-          'SELECT financial_year FROM maintenance_letters WHERE id = ?',
-          [resolvedLetterId]
-        )?.financial_year
+      // Validate financial year format
+      if (!resolvedFinancialYear || !resolvedFinancialYear.match(/^\d{4}-\d{2}$/)) {
+        throw new Error('Invalid or missing financial year. Please provide a valid financial year (e.g., 2024-25).')
       }
 
       const result = dbService.run(

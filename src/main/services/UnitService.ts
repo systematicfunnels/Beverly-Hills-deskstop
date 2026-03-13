@@ -12,6 +12,8 @@ export interface Unit {
   email?: string
   status?: string
   penalty?: number
+  billing_address?: string
+  resident_address?: string
   project_name?: string // Joined field
 }
 
@@ -154,8 +156,8 @@ class UnitService {
     const normalizedSectorCode = this.normalizeSectorCode(unit.sector_code, unit.unit_number)
     const result = dbService.run(
       `INSERT INTO units (
-        project_id, unit_number, sector_code, unit_type, area_sqft, owner_name, contact_number, email, status, penalty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        project_id, unit_number, sector_code, unit_type, area_sqft, owner_name, contact_number, email, billing_address, resident_address, status, penalty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         unit.project_id,
         unit.unit_number,
@@ -165,6 +167,8 @@ class UnitService {
         unit.owner_name,
         unit.contact_number,
         unit.email,
+        unit.billing_address || '',
+        unit.resident_address || '',
         this.normalizeUnitStatus(unit.status),
         unit.penalty || 0
       ]
@@ -197,6 +201,8 @@ class UnitService {
       'owner_name',
       'contact_number',
       'email',
+      'billing_address',
+      'resident_address',
       'status',
       'penalty'
     ]
@@ -326,6 +332,19 @@ class UnitService {
                 unitId
               ])
             }
+            // Update address fields if provided
+            if (row.billing_address !== undefined) {
+              dbService.run('UPDATE units SET billing_address = ? WHERE id = ?', [
+                String(row.billing_address || ''),
+                unitId
+              ])
+            }
+            if (row.resident_address !== undefined) {
+              dbService.run('UPDATE units SET resident_address = ? WHERE id = ?', [
+                String(row.resident_address || ''),
+                unitId
+              ])
+            }
           } else {
               unitId = this.create({
                 project_id: projectId,
@@ -337,7 +356,9 @@ class UnitService {
                 contact_number: (row.contact_number as string) || '',
                 email: (row.email as string) || '',
                 status: this.normalizeUnitStatus(row.status),
-                penalty: Number(row.penalty) || 0
+                penalty: Number(row.penalty) || 0,
+                billing_address: (row.billing_address as string) || '',
+                resident_address: (row.resident_address as string) || ''
               })
             }
 

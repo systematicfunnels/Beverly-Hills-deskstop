@@ -736,6 +736,11 @@ class ProjectService {
       warnings.push('No maintenance rates are configured yet.')
     }
 
+    // Validate required bank details
+    if (!hasDefaultPaymentDetails) {
+      blockers.push('Bank details are incomplete - Account Name, Bank Name, Account Number, and IFSC Code are required')
+    }
+
     if (!project.import_profile_key) {
       warnings.push('Import profile is not selected. Excel parsing may be inconsistent.')
     }

@@ -336,6 +336,8 @@ export const parseStandardWorkbook = (workbook: WorkbookSheetRows): StandardWork
       email,
       status: normalizeUnitStatus(getValue(row, ['status'])),
       penalty: cleanNumber(getValue(row, ['opening_penalty', 'penalty'])),
+      billing_address: text(getValue(row, ['billing_address', 'address', 'owner_address'])),
+      resident_address: text(getValue(row, ['resident_address', 'current_address'])),
       years: []
     }
 
@@ -435,6 +437,7 @@ export const parseStandardWorkbook = (workbook: WorkbookSheetRows): StandardWork
       discount_amount: cleanNumber(getValue(row, ['discount_amount'])),
       final_amount: cleanNumber(getValue(row, ['final_amount'])),
       due_date: normalizeIsoDate(getValue(row, ['due_date'])),
+      penalty: cleanNumber(getValue(row, ['penalty', 'penalty_amount'])),
       add_ons: addOns
     }
 
