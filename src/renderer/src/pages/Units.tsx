@@ -17,7 +17,8 @@ import {
   Alert,
   DividerProps,
   Tag,
-  Tooltip
+  Tooltip,
+  notification
 } from 'antd'
 import {
   PlusOutlined,
@@ -30,6 +31,7 @@ import {
 import { IndianRupee } from 'lucide-react'
 import { Unit, Project } from '@preload/types'
 import { readExcelFile } from '../utils/excelReader'
+import { showCompletionWithNextStep } from '../utils/workflowGuidance'
 
 const { Title, Text, Paragraph } = Typography
 const { Option } = Select
@@ -721,6 +723,10 @@ const Units: React.FC = () => {
       }
 
       message.success(`Successfully imported ${rowsToImport.length} unit records and their history`)
+      
+      // Show next step guidance using utility
+      showCompletionWithNextStep('units', 'Units imported', navigate, `${rowsToImport.length} units imported`)
+      
       setIsImportModalOpen(false)
       setImportData([])
       setMappedPreview([])
@@ -1588,7 +1594,7 @@ const Units: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ unit_type: 'Bungalow', status: 'Occupied' }}
+          initialValues={{ unit_type: 'Bungalow', status: 'Active' }}
         >
           <Divider
             orientation={'left' as DividerProps['orientation']}

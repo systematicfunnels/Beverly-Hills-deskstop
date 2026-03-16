@@ -26,9 +26,13 @@ export interface MaintenanceBill {
   bungalow?: string
   owner_name?: string
   project_name?: string
+  account_name?: string
   bank_name?: string
   account_no?: string
   ifsc_code?: string
+  branch?: string
+  branch_address?: string
+  qr_code_path?: string
 }
 
 class MaintenanceBillService {
@@ -40,8 +44,8 @@ class MaintenanceBillService {
       SELECT l.id, l.project_id, l.unit_id, l.year, l.maintenance, l.na_tax, l.rd_na, 
              l.cable, l.other_charges, l.penalty, l.discount, l.year_total, l.due_date, 
              l.status, l.pdf_path, l.generated_date, u.unit_number, u.owner_name, 
-             u.plot, u.bungalow, p.name as project_name, p.bank_name, p.account_no, 
-             p.ifsc_code, p.letterhead_path, p.qr_code_path
+             u.plot, u.bungalow, p.name as project_name, p.account_name, p.bank_name, 
+             p.account_no, p.ifsc_code, p.branch, p.branch_address, p.letterhead_path, p.qr_code_path
       FROM unit_maintenance_bills l
       JOIN units u ON l.unit_id = u.id
       JOIN projects p ON l.project_id = p.id
@@ -96,7 +100,7 @@ class MaintenanceBillService {
       )
     }
 
-    // Premium Tag
+    // Project Tag
     page.drawRectangle({
       x: width - 120,
       y: height - 40,
@@ -104,7 +108,7 @@ class MaintenanceBillService {
       height: 20,
       color: rgb(0.85, 0.65, 0.13) // Gold color
     })
-    page.drawText('PREMIUM SYSTEM', {
+    page.drawText(`${bill.project_name || 'SYSTEM'}`, {
       x: width - 110,
       y: height - 33,
       size: 8,
@@ -223,7 +227,7 @@ class MaintenanceBillService {
 
     page.drawText('Digitally Signed By:', { x: 400, y: signatureY + 35, size: 9, font })
     page.drawText('AUTHORIZED SIGNATORY', { x: 400, y: signatureY - 25, size: 10, font: boldFont })
-    page.drawText('BEVERLY HILLS MANAGEMENT', {
+    page.drawText(`${bill.project_name || 'MANAGEMENT'} - Accounts Department`, {
       x: 400,
       y: signatureY - 40,
       size: 8,
@@ -239,9 +243,11 @@ class MaintenanceBillService {
       size: 10,
       font: boldFont
     })
-    page.drawText(`Bank: ${bill.bank_name || 'N/A'}`, { x: 50, y: currentY + 20, size: 9, font })
-    page.drawText(`A/C No: ${bill.account_no || 'N/A'}`, { x: 50, y: currentY + 5, size: 9, font })
-    page.drawText(`IFSC: ${bill.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 10, size: 9, font })
+    page.drawText(`Account Name: ${bill.account_name || 'N/A'}`, { x: 50, y: currentY + 20, size: 9, font })
+    page.drawText(`Bank: ${bill.bank_name || 'N/A'}`, { x: 50, y: currentY + 5, size: 9, font })
+    page.drawText(`Branch: ${bill.branch || 'N/A'}`, { x: 50, y: currentY - 10, size: 9, font })
+    page.drawText(`A/C No: ${bill.account_no || 'N/A'}`, { x: 50, y: currentY - 25, size: 9, font })
+    page.drawText(`IFSC: ${bill.ifsc_code || 'N/A'}`, { x: 50, y: currentY - 40, size: 9, font })
 
     // Footer
     page.drawText(

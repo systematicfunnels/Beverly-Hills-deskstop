@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Row,
@@ -15,7 +16,8 @@ import {
   Input,
   Tag,
   InputNumber,
-  Alert
+  Alert,
+  notification
 } from 'antd'
 import {
   FileExcelOutlined,
@@ -28,6 +30,7 @@ import ExcelJS from 'exceljs'
 import dayjs from 'dayjs'
 
 import { Project, Unit } from '@preload/types'
+import { showCompletionWithNextStep } from '../utils/workflowGuidance'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -61,6 +64,7 @@ interface PivotData {
 }
 
 const Reports: React.FC = () => {
+  const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
   const [allUnits, setAllUnits] = useState<Unit[]>([])
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
@@ -604,6 +608,10 @@ const Reports: React.FC = () => {
       window.URL.revokeObjectURL(url)
 
       message.success('Excel file exported successfully with yearly summary')
+      
+      // Show completion notification using utility
+      showCompletionWithNextStep('reports', 'Report exported', navigate, 'Financial report exported successfully')
+      
     } catch (error) {
       console.error('Failed to export Excel:', error)
       message.error('Failed to export Excel file')

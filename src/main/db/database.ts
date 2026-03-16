@@ -57,6 +57,11 @@ class DatabaseService {
       ? path.join(app.getPath('userData'), 'barkat.db')
       : path.join(__dirname, '../../barkat.db')
 
+    console.log('[DATABASE] Database path:', dbPath)
+    console.log('[DATABASE] App packaged:', app.isPackaged)
+    console.log('[DATABASE] User data path:', app.getPath('userData'))
+    console.log('[DATABASE] __dirname:', __dirname)
+
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
 

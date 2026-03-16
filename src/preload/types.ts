@@ -351,6 +351,29 @@ declare global {
           logs: string[]
         }>
       }
+      backup: {
+        createBackup: () => Promise<{
+          success: boolean
+          backupPath?: string
+          error?: string
+        }>
+        restoreBackup: (backupPath: string) => Promise<{
+          success: boolean
+          error?: string
+        }>
+        listBackups: () => Promise<string[]>
+        startAutoBackup: (intervalDays?: number) => Promise<{
+          enabled: boolean
+          intervalDays: number
+        }>
+        stopAutoBackup: () => Promise<{
+          enabled: boolean
+        }>
+        getConfig: () => Promise<{
+          enabled: boolean
+          intervalDays: number
+        }>
+      }
       settings: {
         getAll: () => Promise<unknown[]>
         update: (key: string, value: string) => Promise<unknown>

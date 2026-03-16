@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons'
 import { IndianRupee } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import BreadcrumbNavigation from './BreadcrumbNavigation'
 
 const { Sider, Content, Header } = AntLayout
 
@@ -150,13 +151,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </Header>
         <Content
           style={{
-            padding: '32px', // Blueprint: 24-32px
+            padding: '32px',
             height: 'calc(100vh - 64px)',
             overflowY: 'auto',
             background: '#f5f7f9'
           }}
         >
-          <div style={{ maxWidth: 1600, margin: '0 auto' }}>{children}</div>
+          <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+            <BreadcrumbNavigation />
+            {children}
+          </div>
         </Content>
       </AntLayout>
     </AntLayout>

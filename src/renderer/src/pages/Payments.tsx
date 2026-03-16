@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -17,7 +17,8 @@ import {
   Card,
   DividerProps,
   Progress,
-  Alert
+  Alert,
+  notification
 } from 'antd'
 import {
   PlusOutlined,
@@ -30,6 +31,7 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Project, Unit, Payment, MaintenanceLetter } from '@preload/types'
+import { showCompletionWithNextStep } from '../utils/workflowGuidance'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -61,6 +63,8 @@ type PaymentFormValues = Record<string, unknown> & {
 }
 
 const Payments: React.FC = () => {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [payments, setPayments] = useState<Payment[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [units, setUnits] = useState<Unit[]>([])
@@ -80,8 +84,6 @@ const Payments: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [form] = Form.useForm()
   const [bulkForm] = Form.useForm()
-  const location = useLocation()
-
   const [bulkPayments, setBulkPayments] = useState<BulkPaymentEntry[]>([])
   const [bulkProject, setBulkProject] = useState<number | null>(null)
   const [generatingReceipts, setGeneratingReceipts] = useState(false)
@@ -297,6 +299,10 @@ const Payments: React.FC = () => {
         paymentIds.push(paymentId)
       }
       message.success(`Successfully recorded ${validPayments.length} payments. Generating receipts...`)
+      
+      // Show next step guidance using utility
+      showCompletionWithNextStep('payments', 'Payments recorded', navigate, `${validPayments.length} payments recorded`)
+      
       setGeneratingReceipts(true)
       try {
         await Promise.all(paymentIds.map(id => window.api.payments.generateReceiptPdf(id)))

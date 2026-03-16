@@ -6,7 +6,6 @@ import {
   Statistic,
   Typography,
   Skeleton,
-  message,
   Select,
   Space,
   Tag,
@@ -25,6 +24,7 @@ import {
 } from '@ant-design/icons'
 import { IndianRupee } from 'lucide-react'
 import { MaintenanceLetter, Project } from '@preload/types'
+import { useAsyncOperation } from '../hooks/useAsyncOperation'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -44,6 +44,7 @@ interface StatCard {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate()
+  const { execute: executeAsync } = useAsyncOperation()
   const [loading, setLoading] = useState(true)
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<number | undefined>(undefined)
@@ -67,29 +68,37 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchProjects = async (): Promise<void> => {
-      try {
-        const data = await window.api.projects.getAll()
-        setProjects(data)
-      } catch {
-        // console.error('Failed to fetch projects', error)
-      }
+      await executeAsync(
+        async () => {
+          const data = await window.api.projects.getAll()
+          setProjects(data)
+        },
+        {
+          errorMessage: 'Failed to load projects',
+          loadingMessage: 'Loading projects...'
+        }
+      )
     }
     fetchProjects()
   }, [])
 
   useEffect(() => {
     const fetchYears = async (): Promise<void> => {
-      try {
-        const letters: MaintenanceLetter[] = await window.api.letters.getAll()
-        const yearSet = new Set(letters.map((l) => l.financial_year).filter(Boolean))
-        yearSet.add(defaultFY)
-        const nextFY = `${currentYear + 1}-${(currentYear + 2).toString().slice(2)}`
-        yearSet.add(nextFY)
-        const years = Array.from(yearSet).sort().reverse()
-        setAvailableFYs(years)
-      } catch {
-        setAvailableFYs([])
-      }
+      await executeAsync(
+        async () => {
+          const letters: MaintenanceLetter[] = await window.api.letters.getAll()
+          const yearSet = new Set(letters.map((l) => l.financial_year).filter(Boolean))
+          yearSet.add(defaultFY)
+          const nextFY = `${currentYear + 1}-${(currentYear + 2).toString().slice(2)}`
+          yearSet.add(nextFY)
+          const years = Array.from(yearSet).sort().reverse()
+          setAvailableFYs(years)
+        },
+        {
+          errorMessage: 'Failed to load financial years',
+          loadingMessage: 'Loading financial years...'
+        }
+      )
     }
     fetchYears()
   }, [currentYear, defaultFY])
@@ -98,15 +107,21 @@ const Dashboard: React.FC = () => {
     const fetchDashboardData = async (): Promise<void> => {
       setLoading(true)
       try {
-        const data = await window.api.projects.getDashboardStats(
-          selectedProject,
-          selectedFY,
-          selectedUnitType,
-          selectedStatus
+        await executeAsync(
+          async () => {
+            const data = await window.api.projects.getDashboardStats(
+              selectedProject,
+              selectedFY,
+              selectedUnitType,
+              selectedStatus
+            )
+            setStats(data)
+          },
+          {
+            errorMessage: 'Failed to load dashboard statistics',
+            loadingMessage: 'Loading dashboard statistics...'
+          }
         )
-        setStats(data)
-      } catch {
-        message.error('Failed to load dashboard statistics')
       } finally {
         setLoading(false)
       }

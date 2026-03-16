@@ -1,26 +1,69 @@
 import React, { useState } from 'react'
 import { Card, Button, Typography, Space, Divider, message, Alert, Modal, List } from 'antd'
 import { DownloadOutlined, UploadOutlined, ToolOutlined } from '@ant-design/icons'
-import { RepairResult } from '@preload/types'
 
 const { Title, Paragraph, Text } = Typography
 
+type DatabaseRepairResult = {
+  success: boolean
+  violations: {
+    table: string
+    rowid: number
+    parent: string
+    fkid: number
+  }[]
+  logs: string[]
+}
+
 const Settings: React.FC = () => {
   const [loading, setLoading] = useState(false)
-  const [repairResults, setRepairResults] = useState<RepairResult | null>(null)
+  const [repairResults, setRepairResults] = useState<DatabaseRepairResult | null>(null)
   const [isRepairModalOpen, setIsRepairModalOpen] = useState(false)
 
   const handleExport = async (): Promise<void> => {
     try {
-      // In a real app, this would trigger a main process save dialog
-      message.info('Database export feature coming soon. Please manually backup beverly-hills.db')
-    } catch {
-      message.error('Export failed')
+      setLoading(true)
+      const result = await window.api.backup.createBackup()
+      
+      if (result.success) {
+        message.success(`Database exported successfully to: ${result.backupPath}`)
+      } else {
+        message.error(`Export failed: ${result.error}`)
+      }
+    } catch (err: unknown) {
+      const error = err as Error
+      message.error('Export failed: ' + error.message)
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleImport = async (): Promise<void> => {
-    message.warning('Importing data will overwrite existing records. Please be careful.')
+    try {
+      const result = await window.api.dialog.selectFile({
+        title: 'Select Database Backup File',
+        filters: [
+          { name: 'Database Files', extensions: ['db', 'sqlite', 'backup'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      })
+
+      if (result) {
+        setLoading(true)
+        const importResult = await window.api.backup.restoreBackup(result)
+        
+        if (importResult.success) {
+          message.success('Database imported successfully. Please restart the application.')
+        } else {
+          message.error(`Import failed: ${importResult.error}`)
+        }
+      }
+    } catch (err: unknown) {
+      const error = err as Error
+      message.error('Import failed: ' + error.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleDatabaseRepair = async (): Promise<void> => {
@@ -70,7 +113,7 @@ const Settings: React.FC = () => {
             <Title level={5}>Import Data</Title>
             <Text type="secondary">Restore data from a previously exported backup file.</Text>
             <div style={{ marginTop: 8 }}>
-              <Button icon={<UploadOutlined />} onClick={handleImport} disabled>
+              <Button icon={<UploadOutlined />} onClick={handleImport} loading={loading}>
                 Restore from Backup
               </Button>
             </div>

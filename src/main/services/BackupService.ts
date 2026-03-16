@@ -24,7 +24,9 @@ export interface BackupResult {
 
 class BackupService {
   private backupDir = path.join(app.getPath('userData'), 'backups')
-  private dbPath = path.join(app.getPath('userData'), 'barkat.db')
+  private dbPath = app.isPackaged
+    ? path.join(app.getPath('userData'), 'barkat.db')
+    : path.join(__dirname, '../../barkat.db')
   private config: BackupConfig = {
     enabled: true,
     intervalDays: 7,
@@ -34,6 +36,10 @@ class BackupService {
   private scheduleId: NodeJS.Timeout | null = null
 
   constructor() {
+    console.log('[BACKUP] Backup service initialized')
+    console.log('[BACKUP] Database path:', this.dbPath)
+    console.log('[BACKUP] Backup directory:', this.backupDir)
+    
     // Ensure backup directory exists
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true })
@@ -45,9 +51,21 @@ class BackupService {
    */
   async createBackup(): Promise<BackupResult> {
     try {
+      console.log('[BACKUP] Starting backup creation...')
+      
+      // Check if database exists before attempting backup
+      if (!fs.existsSync(this.dbPath)) {
+        return { 
+          success: false, 
+          error: `Database file not found at: ${this.dbPath}` 
+        }
+      }
+
       const timestamp = new Date().toISOString().replace(/[:\-]/g, '').slice(0, 15)
       const backupName = `barkat_${timestamp}.db.bak`
       const backupPath = path.join(this.backupDir, backupName)
+
+      console.log('[BACKUP] Creating backup:', backupPath)
 
       // Copy the DB file
       const result = await copyFileAsync(this.dbPath, backupPath)

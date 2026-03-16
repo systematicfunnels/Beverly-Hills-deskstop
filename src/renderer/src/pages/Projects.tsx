@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Table,
   Button,
@@ -16,7 +16,8 @@ import {
   Typography,
   Tabs,
   List,
-  Alert
+  Alert,
+  notification
 } from 'antd'
 import {
   PlusOutlined,
@@ -36,6 +37,7 @@ import {
   StandardWorkbookProjectImportResult
 } from '@preload/types'
 import { readExcelWorkbook } from '../utils/excelReader'
+import { showCompletionWithNextStep } from '../utils/workflowGuidance'
 import MaintenanceRateModal from '../components/MaintenanceRateModal'
 import { parseStandardWorkbook, StandardWorkbookParseResult } from '../utils/standardWorkbook'
 
@@ -98,6 +100,7 @@ const IMPORT_PROFILE_LABELS = Object.fromEntries(
 )
 
 const Projects: React.FC = () => {
+  const navigate = useNavigate()
   const currentYear = new Date().getMonth() < 3 ? new Date().getFullYear() - 1 : new Date().getFullYear()
   const currentFY = `${currentYear}-${String(currentYear + 1).slice(2)}`
   const [projects, setProjects] = useState<Project[]>([])
@@ -384,6 +387,7 @@ const Projects: React.FC = () => {
       message.success(
         `Imported ${importedProjects} project(s), ${importedUnits} unit row(s), and ${importedLetters} maintenance ledger row(s).`
       )
+      showCompletionWithNextStep('projects', 'Projects imported', navigate, `${importedProjects} projects, ${importedUnits} units, ${importedLetters} letters imported`)
     } catch (error) {
       console.error('Workbook import failed:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -529,6 +533,9 @@ const Projects: React.FC = () => {
       } else {
         projectId = await window.api.projects.create(normalizedValues as Project)
         message.success('Project created successfully')
+        
+        // Show next step guidance using utility
+        showCompletionWithNextStep('projects', 'Project created', navigate, `Project "${normalizedValues.name}" created successfully`)
       }
 
       await window.api.projects.saveSectorPaymentConfigs(projectId, preparedSectorConfigs)

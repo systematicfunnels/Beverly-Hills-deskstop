@@ -1,8 +1,8 @@
 import { dbService } from '../db/database'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { BasePDFGenerator } from './BasePDFGenerator'
 
 export interface Payment {
   id?: number
@@ -30,7 +30,7 @@ export interface Receipt {
   receipt_date: string
 }
 
-class PaymentService {
+class PaymentService extends BasePDFGenerator {
   private updateLetterStatus(letterId: number): void {
     const letter = dbService.get<{
       id: number
@@ -94,205 +94,70 @@ class PaymentService {
 
     if (!payment) throw new Error('Payment not found')
 
-    const pdfDoc = await PDFDocument.create()
-    const page = pdfDoc.addPage([595.28, 420.94]) // A5 Landscape-ish
-    const { width, height } = page.getSize()
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
-    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+    await this.initializePDF();
 
     // Header
-    page.drawRectangle({
-      x: 0,
-      y: height - 60,
-      width: width,
-      height: 60,
-      color: rgb(0.17, 0.48, 0.37)
-    })
+    this.drawHeader(payment.project_name?.toUpperCase() || 'MAINTENANCE RECEIPT', 'PAYMENT RECEIPT');
 
-    page.drawText(payment.project_name?.toUpperCase() || 'MAINTENANCE RECEIPT', {
-      x: 30,
-      y: height - 40,
-      size: 18,
-      font: boldFont,
-      color: rgb(1, 1, 1)
-    })
-
-    page.drawText('PAYMENT RECEIPT', {
-      x: width - 150,
-      y: height - 40,
-      size: 12,
-      font: boldFont,
-      color: rgb(1, 1, 1)
-    })
-
-    // Details
-    let currentY = height - 100
-    page.drawText(`Receipt No: ${payment.receipt_number || 'N/A'}`, {
-      x: 30,
-      y: currentY,
+    // Receipt details
+    this.layout.currentY -= 25;
+    this.page.drawText(`Receipt No: ${payment.receipt_number || 'N/A'}`, {
+      x: this.MARGIN,
+      y: this.layout.currentY,
       size: 10,
-      font: boldFont
+      font: this.fonts.bold
     })
-    page.drawText(`Date: ${payment.payment_date}`, {
-      x: width - 150,
-      y: currentY,
+    this.page.drawText(`Date: ${this.formatDate(payment.payment_date)}`, {
+      x: this.layout.width - this.MARGIN - 120,
+      y: this.layout.currentY,
       size: 10,
-      font
+      font: this.fonts.regular
     })
 
-    currentY -= 40
-    page.drawText('Received with thanks from:', {
-      x: 30,
-      y: currentY,
-      size: 10,
-      font
-    })
-    page.drawText(payment.owner_name || 'N/A', {
-      x: 180,
-      y: currentY,
-      size: 11,
-      font: boldFont
-    })
-    page.drawLine({
-      start: {
-        x: 175,
-        y: currentY - 2
-      },
-      end: {
-        x: width - 30,
-        y: currentY - 2
-      }
-    })
+    // Recipient
+    this.layout.currentY -= 40;
+    const recipientDetails = [
+      'Received with thanks from:',
+      payment.owner_name || 'N/A'
+    ];
+    this.drawInfoGrid(recipientDetails, []);
 
-    currentY -= 30
-    page.drawText('Unit Number:', {
-      x: 30,
-      y: currentY,
-      size: 10,
-      font
-    })
-    page.drawText(payment.unit_number || 'N/A', {
-      x: 180,
-      y: currentY,
-      size: 11,
-      font: boldFont
-    })
-    page.drawLine({
-      start: {
-        x: 175,
-        y: currentY - 2
-      },
-      end: {
-        x: width - 30,
-        y: currentY - 2
-      }
-    })
+    // Payment details
+    this.layout.currentY -= 30;
+    const paymentDetails = [
+      'Unit Number: ' + (payment.unit_number || 'N/A'),
+      'The sum of Rupees: ' + this.formatCurrency(payment.payment_amount)
+    ];
+    this.drawInfoGrid(paymentDetails, []);
 
-    currentY -= 30
-    page.drawText('The sum of Rupees:', {
-      x: 30,
-      y: currentY,
-      size: 10,
-      font
-    })
-    page.drawText(`Rs. ${payment.payment_amount.toFixed(2)}`, {
-      x: 180,
-      y: currentY,
-      size: 11,
-      font: boldFont
-    })
-    page.drawLine({
-      start: {
-        x: 175,
-        y: currentY - 2
-      },
-      end: {
-        x: width - 30,
-        y: currentY - 2
-      }
-    })
+    // Payment mode
+    this.layout.currentY -= 30;
+    const paymentModeDetails = [
+      'Payment Mode: ' + payment.payment_mode + (payment.cheque_number ? ` (${payment.cheque_number})` : '')
+    ];
+    this.drawInfoGrid(paymentModeDetails, []);
 
-    currentY -= 30
-    page.drawText('Payment Mode:', {
-      x: 30,
-      y: currentY,
-      size: 10,
-      font
-    })
-    page.drawText(
-      `${payment.payment_mode} ${payment.cheque_number ? `(${payment.cheque_number})` : ''}`,
-      {
-        x: 180,
-        y: currentY,
-        size: 10,
-        font
-      }
-    )
-    page.drawLine({
-      start: {
-        x: 175,
-        y: currentY - 2
-      },
-      end: {
-        x: width - 30,
-        y: currentY - 2
-      }
-    })
-
+    // Remarks
     if (payment.remarks) {
-      currentY -= 30
-      page.drawText('Remarks:', {
-        x: 30,
-        y: currentY,
-        size: 10,
-        font
-      })
-      page.drawText(payment.remarks, {
-        x: 180,
-        y: currentY,
-        size: 10,
-        font
-      })
-      page.drawLine({
-        start: {
-          x: 175,
-          y: currentY - 2
-        },
-        end: {
-          x: width - 30,
-          y: currentY - 2
-        }
-      })
+      this.layout.currentY -= 30;
+      const remarksDetails = [
+        'Remarks: ' + payment.remarks
+      ];
+      this.drawInfoGrid(remarksDetails, []);
     }
 
-    // Footer / Sign
-    currentY = 50
-    page.drawText("Receiver's Signature", {
-      x: width - 150,
-      y: currentY,
-      size: 10,
-      font: boldFont
-    })
-    page.drawLine({
-      start: {
-        x: width - 160,
-        y: currentY + 15
-      },
-      end: {
-        x: width - 30,
-        y: currentY + 15
-      }
-    })
+    // Footer
+    this.drawFooter("Receiver's Signature");
 
-    const pdfBytes = await pdfDoc.save()
-    const pdfDir = path.join(app.getPath('userData'), 'receipts')
-    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir)
+    const pdfBytes = await this.pdfDoc.save();
+    const pdfDir = path.join(app.getPath('userData'), 'receipts');
+    if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir);
 
-    const fileName = `Receipt_${payment.receipt_number || paymentId}.pdf`
-    const filePath = path.join(pdfDir, fileName)
-    fs.writeFileSync(filePath, pdfBytes)
+    const fileName = `Receipt_${payment.receipt_number || paymentId}.pdf`;
+    const filePath = path.join(pdfDir, fileName);
+    fs.writeFileSync(filePath, pdfBytes);
 
-    return filePath
+    return filePath;
   }
 
   public getAll(): Payment[] {
